@@ -1,0 +1,6 @@
+services:
+  openchamber:
+    environment:
+      # Use an OpenCode server running on the Docker host.
+      OPENCODE_HOST: http://host.docker.internal:4096
+      OPENCODE_SKIP_START: "true"

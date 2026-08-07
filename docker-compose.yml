@@ -1,0 +1,33 @@
+services:
+  openchamber:
+    image: ${OPENCHAMBER_IMAGE:-ghcr.io/wx2020/openchamber-docker:latest}
+    platform: linux/amd64
+    container_name: openchamber
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data/openchamber:/home/openchamber/.config/openchamber
+      - ./data/opencode/share:/home/openchamber/.local/share/opencode
+      - ./data/opencode/state:/home/openchamber/.local/state/opencode
+      - ./data/opencode/config:/home/openchamber/.config/opencode
+      - ./data/ssh:/home/openchamber/.ssh
+      - ./workspaces:/home/openchamber/workspaces
+    environment:
+      # Docker binds OpenChamber to 0.0.0.0 for port mapping, so UI auth is required.
+      OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD before exposing OpenChamber through Docker}
+
+      # Optional tunnel settings:
+      # OPENCHAMBER_TUNNEL_PROVIDER: ${OPENCHAMBER_TUNNEL_PROVIDER}
+      # OPENCHAMBER_TUNNEL_MODE: ${OPENCHAMBER_TUNNEL_MODE}
+      # OPENCHAMBER_TUNNEL_HOSTNAME: ${OPENCHAMBER_TUNNEL_HOSTNAME}
+      # OPENCHAMBER_TUNNEL_TOKEN: ${OPENCHAMBER_TUNNEL_TOKEN}
+      # OPENCHAMBER_TUNNEL_CONFIG: /home/openchamber/.cloudflared/config.yml
+
+      # Optional OpenCode settings:
+      # OPENCODE_HOST: ${OPENCODE_HOST}
+      # OPENCODE_SKIP_START: ${OPENCODE_SKIP_START}
+      # OPENCHAMBER_OPENCODE_HOSTNAME: 0.0.0.0
+      # OH_MY_OPENCODE: "true"
+    restart: unless-stopped

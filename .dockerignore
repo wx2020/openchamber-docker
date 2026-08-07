@@ -1,0 +1,10 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+data
+workspaces
+README.md
+LICENSE
+docker-compose*.yml
