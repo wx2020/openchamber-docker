@@ -1,0 +1,79 @@
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check stable upstream release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest stable upstream release
+        id: upstream
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            '/repos/openchamber/openchamber/releases/latest' \
+            --jq '.tag_name')"
+          if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+            echo "No stable upstream release was found" >&2
+            exit 1
+          fi
+          if ! [[ "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest upstream release is not a supported stable tag: $latest_tag" >&2
+            exit 1
+          fi
+          version="${latest_tag#v}"
+          current="$(tr -d '[:space:]' < VERSION)"
+          echo "latest=$version (current: $current)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ref=$latest_tag" >> "$GITHUB_OUTPUT"
+          if ! dpkg --compare-versions "$version" gt "$current"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update version and create release tag
+        if: steps.upstream.outputs.changed == 'true'
+        id: publish
+        shell: bash
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+          REF: ${{ steps.upstream.outputs.ref }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$VERSION" > VERSION
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION
+          git commit -m "chore: sync OpenChamber $VERSION"
+          git tag -a "$REF" -m "Release $REF"
+          git push origin HEAD:main "$REF"
+
+      - name: Start release build
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          REF: ${{ steps.upstream.outputs.ref }}
+        run: gh workflow run release.yml --ref main -f version="$VERSION" -f upstream_ref="$REF"
