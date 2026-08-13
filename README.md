@@ -180,22 +180,29 @@ OPENCHAMBER_REF 可以是上游 Git tag 或分支名。正式发布使用与 VER
 
 1. Pull request、v* tag 或手动执行 CI 时运行 test。
 2. test 校验版本文件、Compose 配置，并构建 linux/amd64 镜像进行基础烟测。
-3. 只有 tag 触发且 test 成功后，才进入可复用的 Release workflow。
-4. Release workflow 再次验证 tag 与 VERSION 一致，构建并推送 GHCR 镜像，然后创建 GitHub Release。
-5. 镜像只推送到 ghcr.io/wx2020/openchamber-docker，不会发布到 Docker Hub。
+3. v* tag 触发且 test 成功后进入可复用的 Release workflow；上游自动同步则通过 workflow_dispatch 启动同一发布流程。
+4. 手动执行 Manual stable release 时，从 main 同步或创建 official-stable，再启动 Release workflow。
+5. Release workflow 再次验证版本，构建并推送 GHCR 镜像，然后创建 GitHub Release。
+6. 镜像只推送到 ghcr.io/wx2020/openchamber-docker，不会发布到 Docker Hub。
 
-发布新版本的维护者流程：
+上游稳定版本同步工作流每天 UTC 05:17 检查 OpenChamber 最新稳定 Release。发现比 `official-stable` 分支中的 VERSION 更新的三段式版本时，工作流会将最新 `main` 合入 `official-stable`，写入新的 VERSION，再以该分支启动 Release workflow 构建并推送 GHCR 镜像；不会直接写入受保护的 `main`。因此 Dockerfile、Compose 和工作流修复会随下一次上游版本同步进入发布分支。没有新版本时不会产生提交或构建。也可以在 Actions 中手动运行 Sync upstream release。
+
+手动发布稳定版本的维护者流程：
 
 ~~~bash
-# 先把 VERSION 改成已验证的上游版本，例如 1.18.2
-git add VERSION
-git commit -m "chore: release OpenChamber 1.18.2"
-git tag -a v1.18.2 -m "Release v1.18.2"
-git push origin main
-git push origin v1.18.2
+# 将 Dockerfile、Compose 或工作流修改合并到 main
+# 然后在 GitHub Actions 中运行 Manual stable release，并选择 main
 ~~~
 
-仓库保护规则应要求通过 Pull Request 合并功能和工作流修改；版本 tag 只应指向 main 上已经测试通过的提交。
+Manual stable release 会执行以下逻辑：
+
+- official-stable 不存在时，从 main 创建它。
+- official-stable 存在时，将 main 的最新修改合入它。
+- official-stable 有合法 VERSION 时，继续发布该版本。
+- official-stable 没有合法 VERSION 时，使用上游最新稳定 Release。
+- 准备完成后从 official-stable 启动 Release workflow，构建并发布镜像。
+
+仓库保护规则应要求通过 Pull Request 合并 main 上的功能和工作流修改；稳定发布分支由工作流维护。
 
 ## 常见问题
 

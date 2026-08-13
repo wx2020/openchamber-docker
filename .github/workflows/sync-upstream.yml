@@ -1,0 +1,113 @@
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: official-stable-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check stable upstream release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch stable branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if git ls-remote --exit-code --heads origin official-stable >/dev/null 2>&1; then
+            git fetch origin official-stable:refs/remotes/origin/official-stable
+          fi
+
+      - name: Find latest stable upstream release
+        id: upstream
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            '/repos/openchamber/openchamber/releases/latest' \
+            --jq '.tag_name')"
+          if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+            echo "No stable upstream release was found" >&2
+            exit 1
+          fi
+          if ! [[ "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest upstream release is not a supported stable tag: $latest_tag" >&2
+            exit 1
+          fi
+          version="${latest_tag#v}"
+          current=''
+          if git show-ref --verify --quiet refs/remotes/origin/official-stable && \
+             git cat-file -e origin/official-stable:VERSION 2>/dev/null; then
+            stored_version="$(git show origin/official-stable:VERSION | tr -d '[:space:]')"
+            if [[ "$stored_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              current="$stored_version"
+            fi
+          fi
+          echo "latest=$version (current: $current)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ref=$latest_tag" >> "$GITHUB_OUTPUT"
+          if [[ -z "$current" ]] || dpkg --compare-versions "$version" gt "$current"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync main into stable branch
+        if: steps.upstream.outputs.changed == 'true'
+        id: publish
+        shell: bash
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+          REF: ${{ steps.upstream.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
+            git switch --create official-stable --track origin/official-stable
+            if ! git merge --no-ff --no-edit origin/main; then
+              conflict_files="$(git diff --name-only --diff-filter=U)"
+              if [[ "$conflict_files" != "VERSION" ]]; then
+                git merge --abort
+                echo "Cannot merge main into official-stable without resolving non-VERSION conflicts" >&2
+                exit 1
+              fi
+              git checkout --ours -- VERSION
+              git add VERSION
+              git commit --no-edit
+            fi
+          else
+            git switch --create official-stable origin/main
+          fi
+
+          if [[ ! -f VERSION ]] || [[ "$(tr -d '[:space:]' < VERSION)" != "$VERSION" ]]; then
+            printf '%s\n' "$VERSION" > VERSION
+            git add VERSION
+            git commit -m "chore: sync OpenChamber $VERSION"
+          fi
+          git push origin official-stable
+
+      - name: Start release build
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          REF: ${{ steps.upstream.outputs.ref }}
+        run: gh workflow run release.yml --ref official-stable -f version="$VERSION" -f upstream_ref="$REF"
