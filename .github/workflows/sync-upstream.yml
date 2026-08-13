@@ -25,7 +25,7 @@ jobs:
 
       - name: Fetch stable branch
         shell: bash
-        run: git fetch origin official-stable:refs/remotes/origin/official-stable || true
+        run: git fetch origin main official-stable:refs/remotes/origin/official-stable || true
 
       - name: Find latest stable upstream release
         id: upstream
@@ -61,7 +61,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update stable branch
+      - name: Sync main into stable branch
         if: steps.upstream.outputs.changed == 'true'
         id: publish
         shell: bash
@@ -70,17 +70,22 @@ jobs:
           REF: ${{ steps.upstream.outputs.ref }}
         run: |
           set -euo pipefail
+          stable_sha=''
           if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
-            git switch --create official-stable --track origin/official-stable
-          else
-            git switch --create official-stable "$GITHUB_SHA"
+            stable_sha="$(git rev-parse refs/remotes/origin/official-stable)"
           fi
+          # Rebase the publishing branch on the latest wrapper configuration.
+          git switch --detach origin/main
           printf '%s\n' "$VERSION" > VERSION
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add VERSION
           git commit -m "chore: sync OpenChamber $VERSION"
-          git push origin HEAD:official-stable
+          if [[ -n "$stable_sha" ]]; then
+            git push --force-with-lease="refs/heads/official-stable:$stable_sha" origin HEAD:official-stable
+          else
+            git push origin HEAD:official-stable
+          fi
 
       - name: Start release build
         if: steps.upstream.outputs.changed == 'true'
