@@ -184,7 +184,7 @@ OPENCHAMBER_REF 可以是上游 Git tag 或分支名。正式发布使用与 VER
 4. Release workflow 再次验证 tag 与 VERSION 一致，构建并推送 GHCR 镜像，然后创建 GitHub Release。
 5. 镜像只推送到 ghcr.io/wx2020/openchamber-docker，不会发布到 Docker Hub。
 
-上游稳定版本同步工作流每天 UTC 05:17 检查 OpenChamber 最新稳定 Release。发现比 VERSION 更新的三段式版本时，工作流会自动提交 VERSION、创建对应的 v* tag，并启动 Release workflow 构建和推送 GHCR 镜像；没有新版本时不会产生提交或构建。也可以在 Actions 中手动运行 Sync upstream release。
+上游稳定版本同步工作流每天 UTC 05:17 检查 OpenChamber 最新稳定 Release。发现比 `official-stable` 分支中的 VERSION 更新的三段式版本时，工作流会把版本提交到 `official-stable`，再以该分支启动 Release workflow 构建并推送 GHCR 镜像；不会直接写入受保护的 `main`。没有新版本时不会产生提交或构建。也可以在 Actions 中手动运行 Sync upstream release。
 
 发布新版本的维护者流程：
 

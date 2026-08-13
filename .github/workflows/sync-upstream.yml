@@ -23,6 +23,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch stable branch
+        shell: bash
+        run: git fetch origin official-stable:refs/remotes/origin/official-stable || true
+
       - name: Find latest stable upstream release
         id: upstream
         shell: bash
@@ -43,7 +47,11 @@ jobs:
             exit 1
           fi
           version="${latest_tag#v}"
-          current="$(tr -d '[:space:]' < VERSION)"
+          if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
+            current="$(git show origin/official-stable:VERSION | tr -d '[:space:]')"
+          else
+            current="$(tr -d '[:space:]' < VERSION)"
+          fi
           echo "latest=$version (current: $current)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ref=$latest_tag" >> "$GITHUB_OUTPUT"
@@ -53,7 +61,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update version and create release tag
+      - name: Update stable branch
         if: steps.upstream.outputs.changed == 'true'
         id: publish
         shell: bash
@@ -62,13 +70,17 @@ jobs:
           REF: ${{ steps.upstream.outputs.ref }}
         run: |
           set -euo pipefail
+          if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
+            git switch --create official-stable --track origin/official-stable
+          else
+            git switch --create official-stable "$GITHUB_SHA"
+          fi
           printf '%s\n' "$VERSION" > VERSION
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add VERSION
           git commit -m "chore: sync OpenChamber $VERSION"
-          git tag -a "$REF" -m "Release $REF"
-          git push origin HEAD:main "$REF"
+          git push origin HEAD:official-stable
 
       - name: Start release build
         if: steps.upstream.outputs.changed == 'true'
@@ -76,4 +88,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.upstream.outputs.version }}
           REF: ${{ steps.upstream.outputs.ref }}
-        run: gh workflow run release.yml --ref main -f version="$VERSION" -f upstream_ref="$REF"
+        run: gh workflow run release.yml --ref official-stable -f version="$VERSION" -f upstream_ref="$REF"
