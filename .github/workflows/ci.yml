@@ -43,6 +43,12 @@ jobs:
           OPENCHAMBER_UI_PASSWORD: ci-only-not-a-secret
         run: docker compose -f docker-compose.yml config --quiet
 
+      - name: Get opencode-ai version
+        id: opencode
+        run: |
+          version="$(npm show opencode-ai version)"
+          echo "opencode_version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -58,6 +64,7 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=v${{ steps.version.outputs.version }}
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
+            OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
 
