@@ -128,10 +128,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
+# Java JDK: installed directly in the final image so JAVA_HOME is valid
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=runtimes /usr/local/bin/ /usr/local/bin/
 COPY --from=runtimes /usr/local/lib/ /usr/local/lib/
 COPY --from=runtimes /usr/local/go /usr/local/go
 COPY --from=runtimes /root/.cargo /home/openchamber/.cargo
+COPY --from=runtimes /root/.rustup /home/openchamber/.rustup
 COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
 
@@ -139,6 +144,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
 ENV PATH="${NPM_CONFIG_PREFIX}/bin:/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
+ENV RUSTUP_HOME=/home/openchamber/.rustup
 ENV ANDROID_HOME=/opt/android-sdk
 ENV NODE_ENV=production
 ENV OPENCHAMBER_IMAGE_VERSION=${OPENCHAMBER_VERSION}
