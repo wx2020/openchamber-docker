@@ -132,7 +132,7 @@ RUN userdel bun \
 USER openchamber
 
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
-ENV PATH=${NPM_CONFIG_PREFIX}/bin:${PATH}
+ENV PATH=/usr/local/bin:${NPM_CONFIG_PREFIX}/bin:${PATH}
 
 RUN npm config set prefix /home/openchamber/.npm-global \
     && mkdir -p /home/openchamber/.npm-global \
@@ -146,11 +146,8 @@ RUN npm config set prefix /home/openchamber/.npm-global \
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
 # 复制所有运行时
-COPY --from=runtimes /usr/local/bin/node /usr/local/bin/node
-COPY --from=runtimes /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=runtimes /usr/local/bin/python /usr/local/bin/python
-COPY --from=runtimes /usr/local/bin/python3 /usr/local/bin/python3
-COPY --from=runtimes /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=runtimes /usr/local/bin/ /usr/local/bin/
+COPY --from=runtimes /usr/local/lib/ /usr/local/lib/
 COPY --from=runtimes /usr/local/go /usr/local/go
 COPY --from=runtimes /root/.cargo /home/openchamber/.cargo
 COPY --from=runtimes /opt/java /opt/java
