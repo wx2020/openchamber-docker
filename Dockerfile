@@ -125,27 +125,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64 -o /usr/local/bin/tea \
     && chmod +x /usr/local/bin/tea
 
-RUN userdel bun \
-    && groupadd -g 1000 openchamber \
-    && useradd -u 1000 -g 1000 -m -s /bin/bash openchamber \
-    && chown -R openchamber:openchamber /home/openchamber
-USER openchamber
-
-ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
-ENV PATH=/usr/local/bin:${NPM_CONFIG_PREFIX}/bin:${PATH}
-
-RUN npm config set prefix /home/openchamber/.npm-global \
-    && mkdir -p /home/openchamber/.npm-global \
-    && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
-    && if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
-         npm install -g opencode-ai@${OPENCODE_VERSION}; \
-       else \
-         npm install -g opencode-ai; \
-       fi
-
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
-# 复制所有运行时
 COPY --from=runtimes /usr/local/bin/ /usr/local/bin/
 COPY --from=runtimes /usr/local/lib/ /usr/local/lib/
 COPY --from=runtimes /usr/local/go /usr/local/go
@@ -154,15 +135,30 @@ COPY --from=runtimes /opt/java /opt/java
 COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
 
-# 设置环境变量
 ENV JAVA_HOME=/opt/java/jdk-17.0.352+8
-ENV PATH="${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
+ENV PATH="/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
 ENV ANDROID_HOME=/opt/android-sdk
-
 ENV NODE_ENV=production
 ENV OPENCHAMBER_IMAGE_VERSION=${OPENCHAMBER_VERSION}
 ENV OPENCODE_IMAGE_VERSION=${OPENCODE_VERSION}
+ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
+
+RUN userdel bun \
+    && groupadd -g 1000 openchamber \
+    && useradd -u 1000 -g 1000 -m -s /bin/bash openchamber \
+    && chown -R openchamber:openchamber /home/openchamber \
+    && mkdir -p /home/openchamber/.npm-global \
+    && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
+    && npm config set prefix /home/openchamber/.npm-global \
+    && if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
+         npm install -g opencode-ai@${OPENCODE_VERSION}; \
+       else \
+         npm install -g opencode-ai; \
+       fi
+
+USER openchamber
+
 LABEL org.opencontainers.image.title="OpenChamber" \
       org.opencontainers.image.description="OpenChamber web interface for OpenCode" \
       org.opencontainers.image.source="https://github.com/wx2020/openchamber-docker" \
