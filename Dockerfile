@@ -104,6 +104,8 @@ FROM oven/bun:1.3.14 AS runtime
 ARG OPENCHAMBER_VERSION
 ARG OPENCHAMBER_REF
 ARG OPENCODE_VERSION=unknown
+ARG GH_VERSION=2.98.0
+ARG TEA_VERSION=0.14.2
 WORKDIR /home/openchamber
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
