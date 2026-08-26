@@ -136,13 +136,13 @@ COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-ENV PATH="/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
+ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
+ENV PATH="${NPM_CONFIG_PREFIX}/bin:/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
 ENV ANDROID_HOME=/opt/android-sdk
 ENV NODE_ENV=production
 ENV OPENCHAMBER_IMAGE_VERSION=${OPENCHAMBER_VERSION}
 ENV OPENCODE_IMAGE_VERSION=${OPENCODE_VERSION}
-ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
 
 RUN userdel bun \
     && groupadd -g 1000 openchamber \
