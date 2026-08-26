@@ -132,11 +132,10 @@ COPY --from=runtimes /usr/local/bin/ /usr/local/bin/
 COPY --from=runtimes /usr/local/lib/ /usr/local/lib/
 COPY --from=runtimes /usr/local/go /usr/local/go
 COPY --from=runtimes /root/.cargo /home/openchamber/.cargo
-COPY --from=runtimes /opt/java /opt/java
 COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
 
-ENV JAVA_HOME=/opt/java/jdk-17.0.352+8
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH="/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
 ENV ANDROID_HOME=/opt/android-sdk
