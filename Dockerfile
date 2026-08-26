@@ -75,9 +75,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --defau
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # ---- Java JDK ----
-RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
-    && rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# Temurin JDK17 via Adoptium API (Debian trixie repos no longer ship openjdk-17).
+# Extracted with --strip-components=1 so JAVA_HOME is a stable path.
+RUN mkdir -p /opt/java \
+    && curl -fsSL 'https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse' \
+       | tar -xzC /opt/java --strip-components=1
+ENV JAVA_HOME=/opt/java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 # ---- Android SDK ----
@@ -128,17 +131,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
+# Temurin JDK is self-contained; ship it from the runtimes stage
+COPY --from=runtimes /opt/java /opt/java
+
 COPY --from=runtimes /usr/local/bin/ /usr/local/bin/
 COPY --from=runtimes /usr/local/lib/ /usr/local/lib/
 COPY --from=runtimes /usr/local/go /usr/local/go
 COPY --from=runtimes /root/.cargo /home/openchamber/.cargo
+COPY --from=runtimes /root/.rustup /home/openchamber/.rustup
 COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV JAVA_HOME=/opt/java
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
 ENV PATH="${NPM_CONFIG_PREFIX}/bin:/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
+ENV RUSTUP_HOME=/home/openchamber/.rustup
 ENV ANDROID_HOME=/opt/android-sdk
 ENV NODE_ENV=production
 ENV OPENCHAMBER_IMAGE_VERSION=${OPENCHAMBER_VERSION}
