@@ -51,7 +51,8 @@ ARG GRADLE_VERSION=8.11.1
 WORKDIR /opt
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl build-essential zlib1g-dev libffi-dev libssl-dev unzip xz-utils \
+    curl ca-certificates build-essential zlib1g-dev libffi-dev libssl-dev unzip xz-utils \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Node.js ----
