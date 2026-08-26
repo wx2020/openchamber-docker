@@ -35,7 +35,7 @@ RUN bun run build:web
 # ============================================
 # Runtimes Stage - 下载所有 SDK
 # ============================================
-FROM oven/bun:1.3.14 AS runtimes
+FROM debian:bookworm-slim AS runtimes
 ARG NODE_VERSION=24.19.0
 ARG PYTHON_VERSION=3.13.15
 ARG GO_VERSION=1.25.14
@@ -50,13 +50,15 @@ ARG GRADLE_VERSION=8.11.1
 
 WORKDIR /opt
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl build-essential zlib1g-dev libffi-dev libssl-dev unzip xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # ---- Node.js ----
-RUN apk add --no-cache curl \
-    && curl -fsSL https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz | tar -xzC /usr/local --strip-components=1
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar -xJC /usr/local --strip-components=1
 
 # ---- Python ----
-RUN apk add --no-cache make gcc g++ zlib-dev libffi-dev \
-    && curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz | tar -xzC /opt \
+RUN curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz | tar -xzC /opt \
     && cd /opt/Python-${PYTHON_VERSION} \
     && ./configure --enable-optimizations --prefix=/usr/local \
     && make -j$(nproc) \
