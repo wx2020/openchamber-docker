@@ -75,8 +75,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --defau
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # ---- Java JDK ----
-RUN curl -fsSL https://github.com/adoptium/temurin${JAVA_VERSION}-binaries/releases/download/jdk-${JAVA_VERSION}.0.352%2B8/OpenJDK17U-jdk_x64_linux_hotspot_${JAVA_VERSION}.0.352_8.tar.gz | tar -xzC /opt/java
-ENV JAVA_HOME=/opt/java/jdk-${JAVA_VERSION}.0.352+8
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 # ---- Android SDK ----
