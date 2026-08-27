@@ -4,6 +4,7 @@ ARG OPENCHAMBER_REPOSITORY=https://github.com/openchamber/openchamber.git
 ARG OPENCHAMBER_REF=main
 ARG OPENCHAMBER_VERSION=unknown
 ARG OPENCODE_VERSION=unknown
+ARG DOTNET_VERSION=8.0
 
 FROM alpine:3.22 AS source
 ARG OPENCHAMBER_REPOSITORY
@@ -102,6 +103,11 @@ RUN curl -fsSL https://services.gradle.org/distributions/gradle-${GRADLE_VERSION
 ENV PATH="/opt/gradle/bin:${PATH}"
 
 # ============================================
+# .NET SDK Stage - 自包含 SDK，供最终镜像整体复制
+# ============================================
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS dotnet
+
+# ============================================
 # Final Runtime Image
 # ============================================
 FROM oven/bun:1.3.14 AS runtime
@@ -141,10 +147,15 @@ COPY --from=runtimes /root/.cargo /home/openchamber/.cargo
 COPY --from=runtimes /root/.rustup /home/openchamber/.rustup
 COPY --from=runtimes /opt/android-sdk /opt/android-sdk
 COPY --from=runtimes /opt/gradle /opt/gradle
+# .NET SDK is self-contained under /usr/share/dotnet
+COPY --from=dotnet /usr/share/dotnet /usr/share/dotnet
 
 ENV JAVA_HOME=/opt/java
+ENV DOTNET_ROOT=/usr/share/dotnet
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
-ENV PATH="${NPM_CONFIG_PREFIX}/bin:/usr/local/bin:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
+ENV PATH="${NPM_CONFIG_PREFIX}/bin:/usr/local/bin:${DOTNET_ROOT}:${JAVA_HOME}/bin:/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/go/bin:/home/openchamber/.cargo/bin:${PATH}"
 ENV GOPATH=/home/openchamber/go
 ENV RUSTUP_HOME=/home/openchamber/.rustup
 ENV ANDROID_HOME=/opt/android-sdk

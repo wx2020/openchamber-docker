@@ -76,7 +76,11 @@ jobs:
             "openchamber-ci:${{ steps.version.outputs.version }}" \
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
-                  test -x /usr/local/bin/cloudflared'
+                  test -x /usr/local/bin/cloudflared && \
+                  command -v dotnet >/dev/null && \
+                  command -v java >/dev/null && \
+                  command -v cargo >/dev/null && \
+                  command -v go >/dev/null'
 
   release:
     name: release
