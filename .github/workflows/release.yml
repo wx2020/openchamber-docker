@@ -198,7 +198,8 @@ jobs:
             - Python: 3.13.15
             - Go: 1.25.14
             - Rust: 1.98.0
-            - Java: JDK 17
+            - Java: JDK 17 (Temurin)
+            - .NET: SDK 8.0
             - Android SDK: cmdline-tools 36.0.2, build-tools 36, platform 36
             - Gradle: 8.11.1
 
