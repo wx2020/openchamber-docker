@@ -38,7 +38,8 @@ RUN bun install --frozen-lockfile --ignore-scripts
 FROM deps AS builder
 WORKDIR /app
 COPY --from=source /src/ .
-RUN bun run build:web
+RUN bun run build:web \
+    && bun run --cwd packages/sdk build
 
 # ============================================
 # Runtimes Stage - 下载所有 SDK
@@ -202,6 +203,10 @@ COPY --from=builder /app/packages/web/package.json ./packages/web/package.json
 COPY --from=builder /app/packages/web/bin ./packages/web/bin
 COPY --from=builder /app/packages/web/server ./packages/web/server
 COPY --from=builder /app/packages/web/dist ./packages/web/dist
+COPY --from=builder /app/packages/web/public ./packages/web/public
+COPY --from=builder /app/packages/web/built-in-extensions ./packages/web/built-in-extensions
+COPY --from=builder /app/packages/sdk/package.json ./packages/sdk/package.json
+COPY --from=builder /app/packages/sdk/dist ./packages/sdk/dist
 
 EXPOSE 3000
 ENTRYPOINT ["sh", "/home/openchamber/openchamber-entrypoint.sh"]
