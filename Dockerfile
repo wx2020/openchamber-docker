@@ -21,18 +21,9 @@ WORKDIR /app
 COPY --from=source /src/package.json ./package.json
 COPY --from=source /src/bun.lock ./bun.lock
 COPY --from=source /src/bun-patches ./bun-patches
-COPY --from=source /src/packages/ui/package.json ./packages/ui/
-COPY --from=source /src/packages/web/package.json ./packages/web/
-COPY --from=source /src/packages/electron/package.json ./packages/electron/
-COPY --from=source /src/packages/vscode/package.json ./packages/vscode/
-COPY --from=source /src/packages/mobile/package.json ./packages/mobile/
-COPY --from=source /src/packages/sdk/package.json ./packages/sdk/
-COPY --from=source /src/packages/sdk/examples/config-editor/package.json ./packages/sdk/examples/config-editor/
-COPY --from=source /src/packages/sdk/examples/github-token/package.json ./packages/sdk/examples/github-token/
-COPY --from=source /src/packages/sdk/examples/hello-kit/package.json ./packages/sdk/examples/hello-kit/
-COPY --from=source /src/packages/sdk/examples/service-echo/package.json ./packages/sdk/examples/service-echo/
-COPY --from=source /src/packages/sdk/examples/tasks-demo/package.json ./packages/sdk/examples/tasks-demo/
-COPY --from=source /src/packages/sdk/examples/tools-only/package.json ./packages/sdk/examples/tools-only/
+# Workspaces are globbed by the root package.json (packages/*, packages/sdk/examples/*);
+# copy the whole tree so bun.lock's workspace set always matches on-disk package.json files.
+COPY --from=source /src/packages ./packages
 RUN bun install --frozen-lockfile --ignore-scripts
 
 FROM deps AS builder
