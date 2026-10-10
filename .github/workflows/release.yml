@@ -37,6 +37,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       upstream_ref: ${{ steps.version.outputs.upstream_ref }}
       opencode_version: ${{ steps.opencode.outputs.opencode_version }}
+      opencode_package: ${{ steps.opencode.outputs.package }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -91,11 +92,38 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$upstream_ref" >> "$GITHUB_OUTPUT"
 
-      - name: Get opencode-ai version
+      - name: Resolve OpenCode CLI package and version
         id: opencode
+        shell: bash
+        env:
+          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
+          UPSTREAM_REF: ${{ steps.version.outputs.upstream_ref }}
         run: |
-          version="$(npm show opencode-ai version)"
-          echo "opencode_version=$version" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          oc_major="${OPENCHAMBER_VERSION%%.*}"
+          if [ "${oc_major}" -ge 2 ]; then pkg="@opencode/cli"; else pkg="opencode-ai"; fi
+          # Trust the upstream Dockerfile pin when present so the bundled server
+          # matches the @opencode/client the image is built from.
+          pin="$(curl -fsSL "https://raw.githubusercontent.com/openchamber/openchamber/${UPSTREAM_REF}/Dockerfile" \
+            | grep -Eo '@opencode/cli@[0-9][0-9A-Za-z.+-]*' | head -n1 | cut -d@ -f3 || true)"
+          if [ "${pkg}" = "@opencode/cli" ] && [ -n "${pin}" ]; then
+            ver="${pin}"
+          else
+            ver="$(npm show "${pkg}" version)"
+          fi
+          npm show "${pkg}@${ver}" version >/dev/null
+          if [ "${oc_major}" -ge 2 ]; then
+            # Upstream floor: MINIMUM_OPENCODE_VERSION in openchamber/openchamber
+            # packages/web/server/lib/opencode/compatibility.js; major must stay 2.
+            if [ "${ver%%.*}" != "2" ] || \
+               [ "$(printf '2.0.20\n%s\n' "${ver}" | sort -V | head -n1)" != "2.0.20" ]; then
+              echo "OpenChamber ${OPENCHAMBER_VERSION} requires OpenCode 2.x >= 2.0.20, resolved ${pkg}@${ver}" >&2
+              exit 1
+            fi
+          fi
+          echo "package=${pkg}" >> "$GITHUB_OUTPUT"
+          echo "opencode_version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "Resolved OpenCode CLI: ${pkg}@${ver} for OpenChamber ${OPENCHAMBER_VERSION}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -112,6 +140,7 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=${{ steps.version.outputs.upstream_ref }}
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
+            OPENCODE_PACKAGE=${{ steps.opencode.outputs.package }}
             OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
@@ -124,7 +153,10 @@ jobs:
             "openchamber-release:${{ steps.version.outputs.version }}" \
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
-                  test -x /usr/local/bin/cloudflared'
+                  test -x /usr/local/bin/cloudflared && \
+                  installed="$(timeout 15 opencode --version 2>&1 | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*" | head -n1)" && \
+                  echo "bundled opencode: ${installed}" && \
+                  test "${installed}" = "${{ steps.opencode.outputs.opencode_version }}"'
 
   ghcr:
     name: Publish GHCR
@@ -170,6 +202,7 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=${{ needs.build.outputs.upstream_ref }}
             OPENCHAMBER_VERSION=${{ needs.build.outputs.version }}
+            OPENCODE_PACKAGE=${{ needs.build.outputs.opencode_package }}
             OPENCODE_VERSION=${{ needs.build.outputs.opencode_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
@@ -191,7 +224,7 @@ jobs:
           body: |
             OpenChamber upstream: https://github.com/openchamber/openchamber/releases/tag/${{ needs.build.outputs.upstream_ref }}
 
-            **Bundled opencode-ai version:** ${{ needs.build.outputs.opencode_version }}
+            **Bundled OpenCode CLI:** ${{ needs.build.outputs.opencode_package }}@${{ needs.build.outputs.opencode_version }}
 
             **Runtime environments:**
             - Node.js: v24.19.0

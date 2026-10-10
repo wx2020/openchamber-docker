@@ -13,7 +13,7 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 镜像 | ghcr.io/wx2020/openchamber-docker |
-| 当前 OpenChamber 版本 | 1.18.1 |
+| 当前 OpenChamber 版本 | 2.2.0 |
 | 发布架构 | linux/amd64（x86_64） |
 | 服务端口 | 3000 |
 | 默认镜像标签 | latest |
@@ -82,20 +82,22 @@ Docker Desktop 需要启用 Linux containers。首次启动前请确认 Docker D
 
 ## 版本和镜像标签
 
-每个上游版本对应一个本仓库版本。当前版本由根目录的 VERSION 文件声明，为 1.18.1。发布 v1.18.1 时，Actions 会生成以下 GHCR 标签：
+每个上游版本对应一个本仓库版本。发布版本以 `official-stable` 分支根目录的 VERSION 文件为准（当前 2.2.0）。发布 v2.2.0 时，Actions 会生成以下 GHCR 标签：
 
 ~~~text
-ghcr.io/wx2020/openchamber-docker:1.18.1
-ghcr.io/wx2020/openchamber-docker:1.18
-ghcr.io/wx2020/openchamber-docker:1
+ghcr.io/wx2020/openchamber-docker:2.2.0
+ghcr.io/wx2020/openchamber-docker:2.2
+ghcr.io/wx2020/openchamber-docker:2
 ghcr.io/wx2020/openchamber-docker:latest
 ~~~
 
 生产环境建议固定完整版本，而不是使用会随发布变化的 latest：
 
 ~~~dotenv
-OPENCHAMBER_IMAGE=ghcr.io/wx2020/openchamber-docker:1.18.1
+OPENCHAMBER_IMAGE=ghcr.io/wx2020/openchamber-docker:2.2.0
 ~~~
+
+镜像捆绑的 OpenCode CLI 版本由构建时解析决定：优先采用上游 OpenChamber 同版本 Dockerfile 中 pin 的 `@opencode/cli` 版本，OpenChamber 2.x 要求 OpenCode 2.0.20 及以上，不满足时构建直接失败。每次发布会在 Release notes 中写明捆绑的 CLI 包与版本，镜像 label `org.openchamber.opencode.version` 也可查询。
 
 更新版本时，修改 .env 后执行：
 
@@ -166,23 +168,25 @@ services:
 ~~~bash
 docker buildx build \
   --platform linux/amd64 \
-  --build-arg OPENCHAMBER_REF=v1.18.1 \
-  --build-arg OPENCHAMBER_VERSION=1.18.1 \
+  --build-arg OPENCHAMBER_REF=v2.2.0 \
+  --build-arg OPENCHAMBER_VERSION=2.2.0 \
   --tag ghcr.io/wx2020/openchamber-docker:local \
   --load .
 ~~~
 
 OPENCHAMBER_REF 可以是上游 Git tag 或分支名。正式发布使用与 VERSION 相同的上游版本 tag，以保证发布版本可复现。构建过程中会下载上游源代码和依赖，首次构建可能需要较长时间。
 
+可选 build-arg：`OPENCODE_PACKAGE`（OpenCode CLI 的 npm 包名）默认 `auto`，按 OPENCHAMBER_VERSION 主版本自动选择（2.x 用 `@opencode/cli`，1.x 用 `opencode-ai`）；`OPENCODE_VERSION` 不传时安装所选包的 latest，发布流程会显式传入上游 pin 的版本。
+
 ## GitHub Actions 发布流程
 
 工作流位于 .github/workflows：
 
 1. Pull request、v* tag 或手动执行 CI 时运行 test。
-2. test 校验版本文件、Compose 配置，并构建 linux/amd64 镜像进行基础烟测。
+2. test 校验版本文件、Compose 配置，解析 OpenCode CLI 的 npm 包与版本（优先上游同版本 pin，校验 2.x 必须 >= 2.0.20），并构建 linux/amd64 镜像做基础烟测（含实测捆绑的 opencode 版本）。
 3. v* tag 触发且 test 成功后进入可复用的 Release workflow；上游自动同步则通过 workflow_dispatch 启动同一发布流程。
 4. 手动执行 Manual stable release 时，从 main 同步或创建 official-stable，再启动 Release workflow。
-5. Release workflow 再次验证版本，构建并推送 GHCR 镜像，然后创建 GitHub Release。
+5. Release workflow 再次验证版本与 CLI 兼容性，构建并推送 GHCR 镜像，然后创建 GitHub Release（notes 标注捆绑的 CLI 版本）。
 6. 镜像只推送到 ghcr.io/wx2020/openchamber-docker，不会发布到 Docker Hub。
 
 上游稳定版本同步工作流每天 UTC 05:17 检查 OpenChamber 最新稳定 Release。发现比 `official-stable` 分支中的 VERSION 更新的三段式版本时，工作流会将最新 `main` 合入 `official-stable`，写入新的 VERSION，再以该分支启动 Release workflow 构建并推送 GHCR 镜像；不会直接写入受保护的 `main`。因此 Dockerfile、Compose 和工作流修复会随下一次上游版本同步进入发布分支。没有新版本时不会产生提交或构建。也可以在 Actions 中手动运行 Sync upstream release。
@@ -205,6 +209,10 @@ Manual stable release 会执行以下逻辑：
 仓库保护规则应要求通过 Pull Request 合并 main 上的功能和工作流修改；稳定发布分支由工作流维护。
 
 ## 常见问题
+
+### OpenCode X is installed. OpenChamber requires OpenCode 2.0.20 or newer
+
+OpenChamber 2.x 只支持 OpenCode 2.x（CLI 包 `@opencode/cli`），旧包 `opencode-ai` 永远是 1.x 线，两者不通用。若运行中的镜像捆绑了 1.x CLI，拉取最新镜像重建即可；从源码构建时按上文 build-arg 说明传入正确的 `OPENCODE_PACKAGE` / `OPENCODE_VERSION`。
 
 ### OPENCHAMBER_UI_PASSWORD 未设置
 

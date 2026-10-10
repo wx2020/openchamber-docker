@@ -4,6 +4,9 @@ ARG OPENCHAMBER_REPOSITORY=https://github.com/openchamber/openchamber.git
 ARG OPENCHAMBER_REF=main
 ARG OPENCHAMBER_VERSION=unknown
 ARG OPENCODE_VERSION=unknown
+# npm package that ships the OpenCode CLI: OpenChamber 2.x uses @opencode/cli,
+# 1.x uses the legacy opencode-ai package. "auto" derives it from the versions above.
+ARG OPENCODE_PACKAGE=auto
 ARG DOTNET_VERSION=8.0
 
 FROM alpine:3.22 AS source
@@ -114,6 +117,7 @@ FROM oven/bun:1.3.14 AS runtime
 ARG OPENCHAMBER_VERSION
 ARG OPENCHAMBER_REF
 ARG OPENCODE_VERSION=unknown
+ARG OPENCODE_PACKAGE=auto
 ARG GH_VERSION=2.98.0
 ARG TEA_VERSION=0.14.2
 WORKDIR /home/openchamber
@@ -170,11 +174,22 @@ RUN userdel bun \
     && mkdir -p /home/openchamber/.npm-global \
     && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
     && npm config set prefix /home/openchamber/.npm-global \
-    && if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
-         npm install -g opencode-ai@${OPENCODE_VERSION}; \
-       else \
-         npm install -g opencode-ai; \
-       fi
+    && { pkg="${OPENCODE_PACKAGE}"; \
+         if [ "${pkg}" = "auto" ]; then \
+           ver="${OPENCHAMBER_VERSION}"; \
+           if [ "${ver}" = "unknown" ] || [ -z "${ver}" ]; then ver="${OPENCHAMBER_REF#v}"; fi; \
+           case "${ver}" in \
+             1|1.*) pkg="opencode-ai" ;; \
+             *)     pkg="@opencode/cli" ;; \
+           esac; \
+         fi; \
+         echo "Installing OpenCode CLI from package: ${pkg} (version: ${OPENCODE_VERSION})"; \
+         if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
+           npm install -g "${pkg}@${OPENCODE_VERSION}"; \
+         else \
+           npm install -g "${pkg}"; \
+         fi; \
+       }
 
 USER openchamber
 
