@@ -109,8 +109,10 @@ jobs:
                   command -v java >/dev/null && \
                   command -v cargo >/dev/null && \
                   command -v go >/dev/null && \
-                  installed="$(timeout 15 opencode --version 2>&1 | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*" | head -n1)" && \
-                  echo "bundled opencode: ${installed}" && \
+                  raw="$(timeout 15 opencode --version 2>/dev/null || true)" && \
+                  installed="$(printf "%s" "${raw}" | tr -d "\r" | sed -E "s/^opencode[[:space:]]+v?//" | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?" | head -n1)" && \
+                  echo "bundled opencode: ${installed} (raw: ${raw})" && \
+                  test -n "${installed}" && \
                   test "${installed}" = "${{ steps.opencode.outputs.opencode_version }}"'
 
   release:
