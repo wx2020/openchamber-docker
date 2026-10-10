@@ -184,10 +184,13 @@ RUN userdel bun \
            esac; \
          fi; \
          echo "Installing OpenCode CLI from package: ${pkg} (version: ${OPENCODE_VERSION})"; \
+         # npm 12 runs install scripts opt-in: without --allow-scripts the postinstall
+         # is skipped, leaving the placeholder bin in place. The flag is allowed for
+         # global installs; older npm ignores it and runs scripts by default.
          if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
-           npm install -g "${pkg}@${OPENCODE_VERSION}"; \
+           npm install -g --allow-scripts="${pkg}" "${pkg}@${OPENCODE_VERSION}"; \
          else \
-           npm install -g "${pkg}"; \
+           npm install -g --allow-scripts="${pkg}" "${pkg}"; \
          fi; \
          # The CLI package ships a placeholder bin and links the real platform
          # binary in postinstall, so verify it here instead of shipping a broken
