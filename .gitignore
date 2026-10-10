@@ -1,6 +1,8 @@
 .env
 data/*
 workspaces/*
+.tmp/
+tmp/
 
 !.gitkeep
 !data/.gitkeep
