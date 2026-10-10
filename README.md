@@ -208,6 +208,8 @@ Manual stable release 会执行以下逻辑：
 
 仓库保护规则应要求通过 Pull Request 合并 main 上的功能和工作流修改；稳定发布分支由工作流维护。
 
+> 仓库必须配置名为 `RELEASE_PUSH_TOKEN` 的 Actions secret：一个带 `workflow` scope 且能推送到本仓库的 Personal Access Token。把 main 合入 official-stable 会一并带上 `.github/workflows/` 的改动，而默认的 `GITHUB_TOKEN` 没有 `workflow` scope，推送会被 GitHub 拒绝（`refusing to allow a GitHub App to create or update workflow`）。缺少该 secret 时工作流会明确报错退出。
+
 ## 常见问题
 
 ### OpenCode X is installed. OpenChamber requires OpenCode 2.0.20 or newer

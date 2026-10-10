@@ -79,8 +79,16 @@ jobs:
         env:
           VERSION: ${{ steps.upstream.outputs.version }}
           REF: ${{ steps.upstream.outputs.ref }}
+          # Same reason as manual-release.yml: pushing workflow files from main
+          # needs a PAT with the 'workflow' scope, which GITHUB_TOKEN cannot have.
+          PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
         run: |
           set -euo pipefail
+          if [[ -z "${PUSH_TOKEN}" ]]; then
+            echo "RELEASE_PUSH_TOKEN is not set. It must be a PAT with 'workflow' scope" >&2
+            echo "that can push to this repository, stored as an Actions secret." >&2
+            exit 1
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
@@ -105,6 +113,7 @@ jobs:
             git add VERSION
             git commit -m "chore: sync OpenChamber $VERSION"
           fi
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin official-stable
 
       - name: Start release build
