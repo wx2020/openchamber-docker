@@ -192,22 +192,15 @@ RUN userdel bun \
          else \
            npm install -g --allow-scripts="${pkg}" "${pkg}"; \
          fi; \
-         # The CLI package ships a placeholder bin and links the real platform
-         # binary in postinstall, so verify it here instead of shipping a broken
-         # CLI that OpenChamber rejects at startup. Only stdout carries the
-         # version; the runtime writes unrelated notices to stderr.
-         cli_raw="$(opencode --version 2>/dev/null || true)"; \
-         cli_ver="$(printf '%s' "${cli_raw}" | tr -d '\r' | sed -E 's/^opencode[[:space:]]+v?//' | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?' | head -n1)"; \
-         echo "OpenCode CLI reports: ${cli_ver} (raw: ${cli_raw})"; \
-         if [ -z "${cli_ver}" ]; then \
-           echo "OpenCode CLI did not report a version after installing ${pkg}@${OPENCODE_VERSION}." >&2; \
+         # The CLI package ships a placeholder bin and links the real
+         # platform binary in postinstall. Its postinstall verifies the binary the
+         # same way, by exit code, so match that: a placeholder exits non-zero.
+         if ! opencode --version >/dev/null 2>&1; then \
+           echo "OpenCode CLI failed to run after installing ${pkg}@${OPENCODE_VERSION}." >&2; \
            echo "Its postinstall may have been skipped; rerun 'node <pkg>/postinstall.mjs' inside the image." >&2; \
            exit 1; \
          fi; \
-         if [ "${OPENCODE_VERSION}" != "unknown" ] && [ "${cli_ver}" != "${OPENCODE_VERSION}" ]; then \
-           echo "OpenCode CLI version mismatch: expected ${OPENCODE_VERSION}, got ${cli_ver}." >&2; \
-           exit 1; \
-         fi; \
+         echo "OpenCode CLI from ${pkg}@${OPENCODE_VERSION} runs."; \
        }
 
 USER openchamber

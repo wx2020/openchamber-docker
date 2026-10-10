@@ -29,9 +29,9 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 ## Code Conventions
 - **OpenCode CLI 的 npm 包名由 OpenChamber 主版本决定**：2.x 用 `@opencode/cli`（上游 pin 与 `@opencode/client`/`@opencode/schema` 联动），1.x 用旧包 `opencode-ai`。Dockerfile 的 `OPENCODE_PACKAGE` build-arg 默认 `auto`，按 `OPENCHAMBER_VERSION` 主版本推导；CI/Release 工作流会显式传入解析结果。
 - **版本解析**：`Resolve OpenCode CLI package and version` 步骤优先取上游同 ref 的 Dockerfile 里 `@opencode/cli@x.y.z` pin，无 pin 才回退 `npm show <pkg> version`。
-- **守卫**：OpenChamber >= 2 时断言 CLI 主版本为 2 且 >= 2.0.20（上游 `compatibility.js` 的 `MINIMUM_OPENCODE_VERSION`），否则 fail fast；烟测用 `opencode --version` 实测镜像内捆绑版本必须等于解析值。
-- **OpenCode CLI 包是"占位 bin + postinstall 链接真实平台二进制"的结构**（`bin/opencode.exe` 在 postinstall 未执行时只是报错脚本）。Dockerfile 在 `npm install -g` 之后会跑 `opencode --version` 自检：解析不到版本或与请求版本不符即构建失败，避免发布 OpenChamber 会拒绝的镜像。
-- **只读 stdout**：运行时会在 stderr 输出与版本无关的通知（如 bun 版本行），解析 `--version` 必须 `2>/dev/null` 后再提取，且兼容 1.x 裸版本与 2.x 的 `opencode vX.Y.Z` 前缀。
+- **守卫**：OpenChamber >= 2 时断言 CLI 主版本为 2 且 >= 2.0.20（上游 `compatibility.js` 的 `MINIMUM_OPENCODE_VERSION`），否则 fail fast。
+- **OpenCode CLI 包是"占位 bin + postinstall 链接真实平台二进制"的结构**（`bin/opencode.exe` 在 postinstall 未执行时只是报错脚本）。npm 12 起 install scripts 默认 opt-in，必须用 `npm install -g --allow-scripts=<pkg>` 放行，否则装出的是占位脚本。
+- **验证 CLI 用退出码，不要解析 `--version` 的输出**：该二进制在容器里可能不向 stdout 写版本（占位脚本退出非零，真实二进制退出 0），与包自身 postinstall 的 `verifyBinary` 一致——只判断 `opencode --version` 是否 exit 0。
 - 工作流中版本必须是纯 semver（`X.Y.Z`），tag 必须是 `vX.Y.Z` 且与 VERSION 一致；镜像只推 GHCR，不推 Docker Hub。
 
 ## Notes

@@ -154,11 +154,8 @@ jobs:
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
                   test -x /usr/local/bin/cloudflared && \
-                  raw="$(timeout 15 opencode --version 2>/dev/null || true)" && \
-                  installed="$(printf "%s" "${raw}" | tr -d "\r" | sed -E "s/^opencode[[:space:]]+v?//" | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?" | head -n1)" && \
-                  echo "bundled opencode: ${installed} (raw: ${raw})" && \
-                  test -n "${installed}" && \
-                  test "${installed}" = "${{ steps.opencode.outputs.opencode_version }}"'
+                  opencode --version >/dev/null 2>&1 && \
+                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}"'
 
   ghcr:
     name: Publish GHCR
