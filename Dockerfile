@@ -170,8 +170,14 @@ ENV OPENCODE_IMAGE_VERSION=${OPENCODE_VERSION}
 RUN userdel bun \
     && groupadd -g 1000 openchamber \
     && useradd -u 1000 -g 1000 -m -s /bin/bash openchamber \
-    && chown -R openchamber:openchamber /home/openchamber \
-    && mkdir -p /home/openchamber/.npm-global \
+    && chown -R openchamber:openchamber /home/openchamber
+
+USER openchamber
+
+# Run the setup as the unprivileged user, like the upstream image does: creating
+# these as root leaves them unwritable, and the CLI then fails at startup with
+# EACCES when it tries to create ~/.local/share.
+RUN mkdir -p /home/openchamber/.npm-global \
     && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
     && npm config set prefix /home/openchamber/.npm-global \
     && { pkg="${OPENCODE_PACKAGE}"; \
@@ -192,18 +198,15 @@ RUN userdel bun \
          else \
            npm install -g --allow-scripts="${pkg}" "${pkg}"; \
          fi; \
-         # The CLI package ships a placeholder bin and links the real
-         # platform binary in postinstall. Its postinstall verifies the binary the
-         # same way, by exit code, so match that: a placeholder exits non-zero.
+         # The CLI package ships a placeholder bin and links the real platform
+         # binary in postinstall; its own verifyBinary only checks the exit code,
+         # because the binary does not print a version here. Match that.
          if ! opencode --version >/dev/null 2>&1; then \
            echo "OpenCode CLI failed to run after installing ${pkg}@${OPENCODE_VERSION}." >&2; \
-           echo "Its postinstall may have been skipped; rerun 'node <pkg>/postinstall.mjs' inside the image." >&2; \
            exit 1; \
          fi; \
-         echo "OpenCode CLI from ${pkg}@${OPENCODE_VERSION} runs."; \
+         echo "OpenCode CLI from ${pkg}@${OPENCODE_VERSION} runs as $(id -un)."; \
        }
-
-USER openchamber
 
 LABEL org.opencontainers.image.title="OpenChamber" \
       org.opencontainers.image.description="OpenChamber web interface for OpenCode" \

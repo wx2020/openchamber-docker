@@ -109,14 +109,8 @@ jobs:
                   command -v java >/dev/null && \
                   command -v cargo >/dev/null && \
                   command -v go >/dev/null && \
-                  { echo "--- opencode path: $(command -v opencode)"; \
-                    ls -lL "$(command -v opencode)" 2>&1 | head -2; \
-                    echo "--- direct exec:"; \
-                    "$(command -v opencode)" --version; \
-                    echo "--- direct exit: $?"; \
-                    echo "--- sh -c:"; \
-                    sh -c "$(command -v opencode) --version"; \
-                    echo "--- sh exit: $?"; } 2>&1 | head -40'
+                  opencode --version >/dev/null 2>&1 && \
+                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}"'
 
   release:
     name: release
