@@ -43,11 +43,38 @@ jobs:
           OPENCHAMBER_UI_PASSWORD: ci-only-not-a-secret
         run: docker compose -f docker-compose.yml config --quiet
 
-      - name: Get opencode-ai version
+      - name: Resolve OpenCode CLI package and version
         id: opencode
+        shell: bash
+        env:
+          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
+          UPSTREAM_REF: v${{ steps.version.outputs.version }}
         run: |
-          version="$(npm show opencode-ai version)"
-          echo "opencode_version=$version" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          oc_major="${OPENCHAMBER_VERSION%%.*}"
+          if [ "${oc_major}" -ge 2 ]; then pkg="@opencode/cli"; else pkg="opencode-ai"; fi
+          # Trust the upstream Dockerfile pin when present so the bundled server
+          # matches the @opencode/client the image is built from.
+          pin="$(curl -fsSL "https://raw.githubusercontent.com/openchamber/openchamber/${UPSTREAM_REF}/Dockerfile" \
+            | grep -Eo '@opencode/cli@[0-9][0-9A-Za-z.+-]*' | head -n1 | cut -d@ -f3 || true)"
+          if [ "${pkg}" = "@opencode/cli" ] && [ -n "${pin}" ]; then
+            ver="${pin}"
+          else
+            ver="$(npm show "${pkg}" version)"
+          fi
+          npm show "${pkg}@${ver}" version >/dev/null
+          if [ "${oc_major}" -ge 2 ]; then
+            # Upstream floor: MINIMUM_OPENCODE_VERSION in openchamber/openchamber
+            # packages/web/server/lib/opencode/compatibility.js; major must stay 2.
+            if [ "${ver%%.*}" != "2" ] || \
+               [ "$(printf '2.0.20\n%s\n' "${ver}" | sort -V | head -n1)" != "2.0.20" ]; then
+              echo "OpenChamber ${OPENCHAMBER_VERSION} requires OpenCode 2.x >= 2.0.20, resolved ${pkg}@${ver}" >&2
+              exit 1
+            fi
+          fi
+          echo "package=${pkg}" >> "$GITHUB_OUTPUT"
+          echo "opencode_version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "Resolved OpenCode CLI: ${pkg}@${ver} for OpenChamber ${OPENCHAMBER_VERSION}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -64,6 +91,7 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=v${{ steps.version.outputs.version }}
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
+            OPENCODE_PACKAGE=${{ steps.opencode.outputs.package }}
             OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
@@ -80,7 +108,9 @@ jobs:
                   command -v dotnet >/dev/null && \
                   command -v java >/dev/null && \
                   command -v cargo >/dev/null && \
-                  command -v go >/dev/null'
+                  command -v go >/dev/null && \
+                  opencode --version >/dev/null 2>&1 && \
+                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}"'
 
   release:
     name: release

@@ -4,6 +4,9 @@ ARG OPENCHAMBER_REPOSITORY=https://github.com/openchamber/openchamber.git
 ARG OPENCHAMBER_REF=main
 ARG OPENCHAMBER_VERSION=unknown
 ARG OPENCODE_VERSION=unknown
+# npm package that ships the OpenCode CLI: OpenChamber 2.x uses @opencode/cli,
+# 1.x uses the legacy opencode-ai package. "auto" derives it from the versions above.
+ARG OPENCODE_PACKAGE=auto
 ARG DOTNET_VERSION=8.0
 
 FROM alpine:3.22 AS source
@@ -113,6 +116,7 @@ FROM oven/bun:1.3.14 AS runtime
 ARG OPENCHAMBER_VERSION
 ARG OPENCHAMBER_REF
 ARG OPENCODE_VERSION=unknown
+ARG OPENCODE_PACKAGE=auto
 ARG GH_VERSION=2.98.0
 ARG TEA_VERSION=0.14.2
 WORKDIR /home/openchamber
@@ -165,17 +169,43 @@ ENV OPENCODE_IMAGE_VERSION=${OPENCODE_VERSION}
 RUN userdel bun \
     && groupadd -g 1000 openchamber \
     && useradd -u 1000 -g 1000 -m -s /bin/bash openchamber \
-    && chown -R openchamber:openchamber /home/openchamber \
-    && mkdir -p /home/openchamber/.npm-global \
-    && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
-    && npm config set prefix /home/openchamber/.npm-global \
-    && if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
-         npm install -g opencode-ai@${OPENCODE_VERSION}; \
-       else \
-         npm install -g opencode-ai; \
-       fi
+    && chown -R openchamber:openchamber /home/openchamber
 
 USER openchamber
+
+# Run the setup as the unprivileged user, like the upstream image does: creating
+# these as root leaves them unwritable, and the CLI then fails at startup with
+# EACCES when it tries to create ~/.local/share.
+RUN mkdir -p /home/openchamber/.npm-global \
+    && mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh \
+    && npm config set prefix /home/openchamber/.npm-global \
+    && { pkg="${OPENCODE_PACKAGE}"; \
+         if [ "${pkg}" = "auto" ]; then \
+           ver="${OPENCHAMBER_VERSION}"; \
+           if [ "${ver}" = "unknown" ] || [ -z "${ver}" ]; then ver="${OPENCHAMBER_REF#v}"; fi; \
+           case "${ver}" in \
+             1|1.*) pkg="opencode-ai" ;; \
+             *)     pkg="@opencode/cli" ;; \
+           esac; \
+         fi; \
+         echo "Installing OpenCode CLI from package: ${pkg} (version: ${OPENCODE_VERSION})"; \
+         # npm 12 runs install scripts opt-in: without --allow-scripts the postinstall
+         # is skipped, leaving the placeholder bin in place. The flag is allowed for
+         # global installs; older npm ignores it and runs scripts by default.
+         if [ "${OPENCODE_VERSION}" != "unknown" ]; then \
+           npm install -g --allow-scripts="${pkg}" "${pkg}@${OPENCODE_VERSION}"; \
+         else \
+           npm install -g --allow-scripts="${pkg}" "${pkg}"; \
+         fi; \
+         # The CLI package ships a placeholder bin and links the real platform
+         # binary in postinstall; its own verifyBinary only checks the exit code,
+         # because the binary does not print a version here. Match that.
+         if ! opencode --version >/dev/null 2>&1; then \
+           echo "OpenCode CLI failed to run after installing ${pkg}@${OPENCODE_VERSION}." >&2; \
+           exit 1; \
+         fi; \
+         echo "OpenCode CLI from ${pkg}@${OPENCODE_VERSION} runs as $(id -un)."; \
+       }
 
 LABEL org.opencontainers.image.title="OpenChamber" \
       org.opencontainers.image.description="OpenChamber web interface for OpenCode" \
