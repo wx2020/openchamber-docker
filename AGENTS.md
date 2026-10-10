@@ -40,7 +40,7 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 - 上游 OpenChamber 2026-09 起（PR #3837）只支持 OpenCode 2.x，1.x 代码路径已删除。
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。
 - 发布链路：`main` 上改功能/工作流 → 合入 `official-stable`（由 sync 或 Manual stable release 工作流执行）→ 从该分支触发 `release.yml`。
-- **推送 official-stable 必须用 secret `RELEASE_PUSH_TOKEN`**（带 `workflow` scope 的 PAT）。main→official-stable 的合并会带上 `.github/workflows/` 改动，而 `GITHUB_TOKEN` 无 `workflow` scope，push 会被拒；`permissions` 里也**没有** `workflows` 这个可用权限项。
+- **推送 official-stable 的隐含前提**：main 与 official-stable 的 `.github/workflows/` 内容必须一致。把 main 合入 official-stable 时若 workflow 文件有变化，默认 `GITHUB_TOKEN` 会因缺少 `workflow` scope 被拒（`permissions` 里没有 `workflows` 这个可用权限项）。改完 workflow 后，用带 `workflow` scope 的 token（本机 `gh` 即可）手动推一次 official-stable，两分支一致后日常同步即恢复正常。
 
 ## Maintenance
 - 每次改完代码或完成新的分析后，必须调用 `sync-agents` skill 检查并更新本文件。

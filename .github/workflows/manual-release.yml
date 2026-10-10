@@ -87,19 +87,9 @@ jobs:
       - name: Merge main into official-stable
         env:
           VERSION: ${{ steps.upstream.outputs.version }}
-          # Merging main brings workflow files along, and the default GITHUB_TOKEN
-          # is refused when it pushes workflow changes ("refusing to allow a GitHub
-          # App to create or update workflow ... without `workflows` permission").
-          # There is no `workflows` scope for GITHUB_TOKEN, so use a PAT that has one.
-          PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${PUSH_TOKEN}" ]]; then
-            echo "RELEASE_PUSH_TOKEN is not set. It must be a PAT with 'workflow' scope" >&2
-            echo "that can push to this repository, stored as an Actions secret." >&2
-            exit 1
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
@@ -125,7 +115,6 @@ jobs:
             git commit -m "chore: set OpenChamber $VERSION"
           fi
 
-          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin official-stable
 
       - name: Start release build
