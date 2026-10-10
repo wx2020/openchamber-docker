@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
   actions: write
+  # Merging main into official-stable can change workflow files, and GitHub
+  # rejects a push from the default GITHUB_TOKEN that updates them without this.
+  workflows: write
 
 concurrency:
   group: official-stable-release
