@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
   actions: write
-  # Merging main into official-stable can change workflow files, and GitHub
-  # rejects a push from the default GITHUB_TOKEN that updates them without this.
-  workflows: write
 
 concurrency:
   group: official-stable-release
@@ -104,6 +101,16 @@ jobs:
             printf '%s\n' "$VERSION" > VERSION
             git add VERSION
             git commit -m "chore: sync OpenChamber $VERSION"
+          fi
+          # GITHUB_TOKEN cannot update .github/workflows (there is no
+          # "workflows" permission scope). Fail with a pointer instead of
+          # letting the push be rejected with an opaque error.
+          if git show-ref --verify --quiet refs/remotes/origin/official-stable; then
+            workflow_changes="$(git diff --name-only origin/official-stable HEAD -- .github/workflows/)"
+            if [[ -n "$workflow_changes" ]]; then
+              echo "::error::This merge changes workflow files, which the default GITHUB_TOKEN cannot push: $workflow_changes. Push official-stable once with a workflow-scoped token to re-align, then re-run."
+              exit 1
+            fi
           fi
           git push origin official-stable
 
