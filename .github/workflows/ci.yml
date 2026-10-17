@@ -38,6 +38,21 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # An invalid workflow file does not fail loudly: GitHub silently stops
+      # scheduling it (the daily sync did exactly that when an unknown
+      # "workflows" permission scope landed in it). Lint catches it here.
+      - name: Lint workflow files
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color -shellcheck=
+
+      # sync merges main into official-stable and pushes with GITHUB_TOKEN,
+      # which cannot update .github/workflows; that preflight lives in
+      # sync-upstream.yml so a stale workflow file fails there with a clear
+      # message instead of an opaque remote rejection.
+
       - name: Validate Compose file
         env:
           OPENCHAMBER_UI_PASSWORD: ci-only-not-a-secret
