@@ -208,7 +208,7 @@ Manual stable release 会执行以下逻辑：
 
 仓库保护规则应要求通过 Pull Request 合并 main 上的功能和工作流修改；稳定发布分支由工作流维护。
 
-> 仓库必须配置名为 `RELEASE_PUSH_TOKEN` 的 Actions secret：一个带 `workflow` scope 且能推送到本仓库的 Personal Access Token。把 main 合入 official-stable 会一并带上 `.github/workflows/` 的改动，而默认的 `GITHUB_TOKEN` 没有 `workflow` scope，推送会被 GitHub 拒绝（`refusing to allow a GitHub App to create or update workflow`）。缺少该 secret 时工作流会明确报错退出。
+> **改workflow 时的注意事项**：把 main 合入 official-stable 会一并带上 `.github/workflows/` 的内容，而默认 `GITHUB_TOKEN` 没有 `workflow` scope，GitHub 会拒绝这类 push（`refusing to allow a GitHub App to create or update workflow`）。只要main 上的 workflow 文件与 official-stable 保持一致，日常同步即可正常工作；一旦修改了 workflow 文件，本次同步需用带 `workflow` scope 的 token（本机 `gh` 亦可）手动推送 official-stable，之后两分支一致，同步即恢复正常。
 
 ## 常见问题
 

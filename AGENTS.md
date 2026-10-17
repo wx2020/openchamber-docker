@@ -40,7 +40,38 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 - 上游 OpenChamber 2026-09 起（PR #3837）只支持 OpenCode 2.x，1.x 代码路径已删除。
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。
 - 发布链路：`main` 上改功能/工作流 → 合入 `official-stable`（由 sync 或 Manual stable release 工作流执行）→ 从该分支触发 `release.yml`。
-- **推送 official-stable 必须用 secret `RELEASE_PUSH_TOKEN`**（带 `workflow` scope 的 PAT）。main→official-stable 的合并会带上 `.github/workflows/` 改动，而 `GITHUB_TOKEN` 无 `workflow` scope，push 会被拒；`permissions` 里也**没有** `workflows` 这个可用权限项。
+- **推送 official-stable 的隐含前提**：main 与 official-stable 的 `.github/workflows/` 内容必须一致。把 main 合入 official-stable 时若 workflow 文件有变化，默认 `GITHUB_TOKEN` 会因缺少 `workflow` scope 被拒（`permissions` 里没有 `workflows` 这个可用权限项）。改完 workflow 后，用带 `workflow` scope 的 token（本机 `gh` 即可）手动推一次 official-stable，两分支一致后日常同步即恢复正常。
+
+## Release Pipeline Incidents
+
+### 2026-10-11 起同步停摆：workflow 文件里的非法 permission scope（已修）
+
+- 现象：`official-stable` 停在 2.2.0，上游已 2.4.0；`sync-upstream.yml` 的每日 schedule **自 2026-10-11 起一次都没跑**（仓库内任何 workflow 在 10-10 09:33 之后都没有运行）。
+- 根因：`permissions:` 里写了 `workflows: write`。**GitHub 的 permission 白名单里没有 `workflows`**，这个键会让**整个 workflow 文件无效**，而 GitHub 既不报错也不运行——只是**静默地不再触发它的 schedule**。该键由 #14 引入（想给 `GITHUB_TOKEN` workflow 权限），#15/#16 只改周边 PAT 逻辑、没删掉它，于是残留。
+- 指纹：无效 workflow 的 run 会以 **0 个 job** 出现，`gh run view` 提示 "This run likely failed because of a workflow file issue"；`actionlint` 直接报 `unknown permission scope "workflows"`（合法集合只有 actions / artifact-metadata / attestations / checks / contents / deployments / discussions / id-token / issues / models / packages / pages / pull-requests / repository-projects / security-events / statuses）。
+- 修复（PR #17）：删掉该键；CI 新增 `Lint workflow files`（actionlint）；`sync` 在 push 前检查 merge 是否改动 `.github/workflows`，若有则以清晰错误退出（`GITHUB_TOKEN` 无法 push workflow 文件）。
+- 教训：**workflow 里写错一个键，整条链路会静默消失**——判断同步是否活着要看**最近一次 run 的时间**，不能只看历史 conclusion；本地 `actionlint` 一秒可查。
+
+### 2026-09-24 起镜像停更：deps 阶段硬编码 workspace 列表（已修）
+
+- 上游 v2.0.0 起往 `packages/sdk/examples/*` 新增包，deps 阶段硬编码 COPY 的 `package.json` 缺了它们 → `bun install --frozen-lockfile` 报 `lockfile had changes, but lockfile is frozen` → 镜像构建全部失败，GHCR 停在 1.24.2 共 8 天。
+- 修复：deps 阶段改为 `COPY --from=source /src/packages ./packages` 整树拷贝，workspace 集合永远与 `bun.lock` 一致，上游加包自动兼容。
+- 教训：对上游 monorepo 别按清单 COPY；`--frozen-lockfile` 报 lockfile 有变化时先怀疑 workspace 集合变化，而不是依赖版本变了。
+
+## 同步看门狗（本机 OpenChamber 定时任务）
+
+- 任务名 `openchamber-docker 同步看门狗`（id `9a02684b-4e36-4526-9ef2-ed42493c2232`），cron `0 */6 * * *`（Asia/Shanghai），模型 `bigmodel-fly97/glm-5.3-flash`，工作目录即本仓库。
+- 作用：对比上游 latest 与 `official-stable` 的 VERSION；落后时先 `actionlint` 体检 workflow 文件与两分支一致性，再 `gh workflow run sync-upstream.yml --ref main` 自愈，并报告 run 结果（失败则附日志关键词）。
+- 存在的理由：GitHub 的 schedule 静默失效时，仓库内部一切看起来都正常（历史 run 全是 success），只有**外部观察者**能发现。
+
+## 运维事实（本容器）
+
+- 推送本仓库走 HTTPS+PAT：`export GH_TOKEN="$(gh auth token)"`（gh 已登录 wx2020，scopes 含 `repo`/`workflow`）→ `git push "https://x-access-token:${GH_TOKEN}@github.com/wx2020/openchamber-docker.git" <src>:<dst>`；容器出网 22 端口被墙，SSH 到 github.com 不通。
+- **`main` 受保护**：只能走 PR，且要求 `test` 检查通过（`enforce_admins=true`、required approvals = 0，自己可合并）；`official-stable` 不受保护，sync / manual-release 可直接推。
+- 失败 run 的日志 zip 需认证：`curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/<o>/<r>/actions/runs/<id>/logs` → python `zipfile` 解（容器无 unzip）。
+- 本机 `actionlint`：`/tmp/opencode/alint/actionlint`（`-shellcheck=` 只做 workflow 校验，避免内联脚本风格问题误伤）。
+- **只有 `.github/workflows/*` 必须两分支逐字节一致**（`GITHUB_TOKEN` 推不动 workflow 文件的任何变动）；其它文件**允许**不同。典型例子：`main` 的 `VERSION` 停在 `1.20.0`、其 `Dockerfile` 是 1.x 基线（CI 就是拿 main 的 VERSION 去构建镜像做烟测），而 `official-stable` 的 `Dockerfile` 才带 2.x 所需的 `packages/sdk` 构建与运行时资产。**别把 official-stable 的 Dockerfile 搬到 main**：CI 会用 1.20.0 构建它，`packages/sdk` 在 v1.20.0 里不存在，build 阶段直接崩（2026-10-17 PR #17 首轮 CI 即因此变红，已回退）。
+- **升级镜像前必须保留的持久化卷**（compose 映射）：`.config/openchamber`、`.config/opencode`、`.local/state|share/opencode`（`opencode.db` + `auth.json`）、`.ssh`、`.config/gh`、`.config/tea`、`.gitconfig`（文件 bind，宿主源须先 `touch`）、`workspaces`。卷源**不得嵌套**在另一卷源目录树内，否则同一份数据被双挂载（清空父目录会连带删掉子卷）。
 
 ## Maintenance
 - 每次改完代码或完成新的分析后，必须调用 `sync-agents` skill 检查并更新本文件。
