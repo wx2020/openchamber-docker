@@ -38,6 +38,10 @@ jobs:
       upstream_ref: ${{ steps.version.outputs.upstream_ref }}
       opencode_version: ${{ steps.opencode.outputs.opencode_version }}
       opencode_package: ${{ steps.opencode.outputs.package }}
+      hcloud_version: ${{ steps.tools.outputs.hcloud_version }}
+      android_cmdline_version: ${{ steps.tools.outputs.android_cmdline_version }}
+      android_build_tools_version: ${{ steps.tools.outputs.android_build_tools_version }}
+      android_platform_version: ${{ steps.tools.outputs.android_platform_version }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -125,6 +129,34 @@ jobs:
           echo "opencode_version=${ver}" >> "$GITHUB_OUTPUT"
           echo "Resolved OpenCode CLI: ${pkg}@${ver} for OpenChamber ${OPENCHAMBER_VERSION}"
 
+      # Bundled tool versions come from the Dockerfile ARG defaults so the
+      # release notes and the smoke test cannot drift from what is built.
+      - name: Resolve bundled tool versions
+        id: tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          read_arg() {
+            local value
+            value="$(sed -nE "s/^ARG $1=([0-9][0-9A-Za-z.]*)$/\1/p" Dockerfile | head -n1)"
+            if [ -z "${value}" ]; then
+              echo "Dockerfile has no ARG $1=<version> default" >&2
+              exit 1
+            fi
+            printf '%s' "${value}"
+          }
+          hcloud="$(read_arg HCLOUD_VERSION)"
+          android_cmdline="$(read_arg ANDROID_CMDLINE_VERSION)"
+          android_build_tools="$(read_arg ANDROID_BUILD_TOOLS_VERSION)"
+          android_platform="$(read_arg ANDROID_PLATFORM_VERSION)"
+          {
+            echo "hcloud_version=${hcloud}"
+            echo "android_cmdline_version=${android_cmdline}"
+            echo "android_build_tools_version=${android_build_tools}"
+            echo "android_platform_version=${android_platform}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Bundled KooCLI: hcloud ${hcloud}; Android cmdline ${android_cmdline}, build-tools ${android_build_tools}, platform ${android_platform}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -142,18 +174,24 @@ jobs:
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
             OPENCODE_PACKAGE=${{ steps.opencode.outputs.package }}
             OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
+            HCLOUD_VERSION=${{ steps.tools.outputs.hcloud_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
 
       - name: Smoke test release image
         shell: bash
+        env:
+          HCLOUD_VERSION: ${{ steps.tools.outputs.hcloud_version }}
         run: |
           set -euo pipefail
           docker run --rm --platform linux/amd64 --entrypoint sh \
+            -e HCLOUD_VERSION \
             "openchamber-release:${{ steps.version.outputs.version }}" \
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
                   test -x /usr/local/bin/cloudflared && \
+                  command -v hcloud >/dev/null && \
+                  hcloud --help 2>&1 | grep -q "KooCLI Version ${HCLOUD_VERSION}" && \
                   opencode --version >/dev/null 2>&1 && \
                   echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}"'
 
@@ -203,6 +241,7 @@ jobs:
             OPENCHAMBER_VERSION=${{ needs.build.outputs.version }}
             OPENCODE_PACKAGE=${{ needs.build.outputs.opencode_package }}
             OPENCODE_VERSION=${{ needs.build.outputs.opencode_version }}
+            HCLOUD_VERSION=${{ needs.build.outputs.hcloud_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
 
@@ -219,9 +258,18 @@ jobs:
         with:
           tag_name: v${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
-          generate_release_notes: true
           body: |
             OpenChamber upstream: https://github.com/openchamber/openchamber/releases/tag/${{ needs.build.outputs.upstream_ref }}
+
+            ## What's Changed
+            * OpenChamber ${{ needs.build.outputs.upstream_ref }} packaged image, see the upstream release notes linked above by @openchamber
+
+            ## Feature
+            * Bundled Huawei Cloud KooCLI (`hcloud`) ${{ needs.build.outputs.hcloud_version }} for DNS and other cloud service operations
+
+            ## Bugfix
+            * Dropped `generate_release_notes`, which duplicated this body
+            * Release notes now read bundled tool versions from the Dockerfile ARGs instead of hardcoded strings
 
             **Bundled OpenCode CLI:** ${{ needs.build.outputs.opencode_package }}@${{ needs.build.outputs.opencode_version }}
 
@@ -232,8 +280,9 @@ jobs:
             - Rust: 1.98.0
             - Java: JDK 17 (Temurin)
             - .NET: SDK 8.0
-            - Android SDK: cmdline-tools 36.0.2, build-tools 36, platform 36
+            - Android SDK: cmdline-tools ${{ needs.build.outputs.android_cmdline_version }}, build-tools ${{ needs.build.outputs.android_build_tools_version }}, platform ${{ needs.build.outputs.android_platform_version }}
             - Gradle: 8.11.1
+            - Huawei Cloud KooCLI (hcloud): ${{ needs.build.outputs.hcloud_version }}
 
             Published image (linux/amd64 only):
             ghcr.io/${{ github.repository }}:v${{ needs.build.outputs.version }}
