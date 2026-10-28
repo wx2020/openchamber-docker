@@ -41,6 +41,10 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。
 - 发布链路：`main` 上改功能/工作流 → 合入 `official-stable`（由 sync 或 Manual stable release 工作流执行）→ 从该分支触发 `release.yml`。
 - **推送 official-stable 的隐含前提**：main 与 official-stable 的 `.github/workflows/` 内容必须一致。把 main 合入 official-stable 时若 workflow 文件有变化，默认 `GITHUB_TOKEN` 会因缺少 `workflow` scope 被拒（`permissions` 里没有 `workflows` 这个可用权限项）。改完 workflow 后，用带 `workflow` scope 的 token（本机 `gh` 即可）手动推一次 official-stable，两分支一致后日常同步即恢复正常。
+- **内置 hcloud（KooCLI），跟随上游 latest 通道**（2026-10-28，PR #18 / 分支 `feat/bundle-hcloud`，commit `404d3d9`→`78b4078`→`818e730`）：Dockerfile 从华为云 OBS 的 `cli/latest` 拉 `huaweicloud-cli-linux-amd64.tar.gz` 装到 `/usr/local/bin/hcloud`。**不锁版本**（上游只提供 `/cli/latest/` 一个公开地址，写死 `7.3.12` 会让上游发新版时构建因断言变红；`/cli/<ver>/` 虽存在但不采用）。版本在构建期从 banner 解析后写入 `/home/openchamber/.hcloud-version`，CI/Release 烟测**从构建出的镜像里回读**该文件，Release notes 声明回读值并注明“跟随 latest 通道”。Android SDK 版本同理由 workflow 读 Dockerfile 的 ARG（原来 notes 里硬编码的 36.0.2/36/36 是错的，实为 `15859902`/`36.0.0`/`35`）。
+  - **最大坑：首次运行隐私声明会吃掉 `--help`**。全新区块里 `hcloud --help` 只打印 Privacy Statement 一行、无 TTY 时静默退出（exit 0），根本不打版本 banner ⇒ 本机测不出（`/root/.hcloud` 早有 `agreePrivacy`）。正解 `printf 'y\n' | hcloud --help`（0.35s、无需网络），随后 `rm -rf /root/.hcloud` 防止把“已同意”写进镜像层。`hcloud version`/`--version` 都不可用（`--version` 报参数格式错误），版本只能从 `--help` 首行 banner 取。
+  - **排障方法论**：CI 构建失败而本地复现不了时，直接在 Dockerfile 里临时插桩把 `which/id/HOME/stdout字节数/首行` 打到构建日志（本轮即由此定位），确认后立刻删插桩。
+  - 用途：云解析 DNS（wx2020.cn 权威托管在华为云）。凭据/profile/zone 见 `homelab-docs/runbooks/huaweicloud-dns-cli.md`；运行镜像 2.5.1 尚不含 hcloud，合入并发布后由镜像提供。
 
 ## Release Pipeline Incidents
 
