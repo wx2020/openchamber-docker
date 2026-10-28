@@ -45,6 +45,9 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
   - **最大坑：首次运行隐私声明会吃掉 `--help`**。全新区块里 `hcloud --help` 只打印 Privacy Statement 一行、无 TTY 时静默退出（exit 0），根本不打版本 banner ⇒ 本机测不出（`/root/.hcloud` 早有 `agreePrivacy`）。正解 `printf 'y\n' | hcloud --help`（0.35s、无需网络），随后 `rm -rf /root/.hcloud` 防止把“已同意”写进镜像层。`hcloud version`/`--version` 都不可用（`--version` 报参数格式错误），版本只能从 `--help` 首行 banner 取。
   - **排障方法论**：CI 构建失败而本地复现不了时，直接在 Dockerfile 里临时插桩把 `which/id/HOME/stdout字节数/首行` 打到构建日志（本轮即由此定位），确认后立刻删插桩。
   - 用途：云解析 DNS（wx2020.cn 权威托管在华为云）。凭据/profile/zone 见 `homelab-docs/runbooks/huaweicloud-dns-cli.md`；运行镜像 2.5.1 尚不含 hcloud，合入并发布后由镜像提供。
+  - **PR #18 CI 已验证（2026-10-28）**：run `40690499564`（head `13dd489`，即 `818e730` 修复 + AGENTS 文档提交）`test` 通过 19m08s；构建日志 `Bundled KooCLI: hcloud 7.3.12` 与烟测 `bundled KooCLI: hcloud 7.3.12` 一致（上游 latest 通道当前就是 7.3.12）。**注意 `release` job 条件是 `startsWith(github.ref, 'refs/tags/v')`，PR 上一律 skipping ⇒ release.yml 新增的 `Resolve bundled tool versions` / 版本回读步骤只过了 actionlint、从未真跑**；本机用真实输入做过等价演练（`read_arg` 得 15859902/36.0.0/35，回读 sed 得 7.3.12），首次 tag 发布时仍需盯这两步。
+  - **合入前提**：本 PR 改了 `.github/workflows/{ci,release}.yml`，`GITHUB_TOKEN` 推不动 workflow 文件 ⇒ 合入 official-stable 必须用带 `workflow` scope 的 token（本机 `gh auth token`）手动 cherry-pick/merge push；release notes 里的新内容只有**下一次 Release 工作流运行**后才会体现。
+  - **小坑**：release 正文里写的 `by @openchamber` 是字面 GitHub 提及（本项目规范里"提交标题别写 `@用户名`"同理），可能凭空生成一条 Contributor 条目；措辞宜改成不带 `@` 的表述。
 
 ## Release Pipeline Incidents
 
