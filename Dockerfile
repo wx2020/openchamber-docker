@@ -146,8 +146,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz | tar -xz -C /tmp \
     && mv /tmp/hcloud /usr/local/bin/hcloud \
     && chmod +x /usr/local/bin/hcloud \
-    && echo "DIAG: which=$(command -v hcloud) id=$(id -u) HOME=${HOME:-unset}" >&2 \
-    && echo "DIAG: raw help output:" >&2 && (hcloud --help; echo "DIAG: exit=$?") 2>&1 | head -20 >&2 \
+    && { echo "DIAG: which=$(command -v hcloud) id=$(id -u) HOME=${HOME:-unset}"; \
+         ls -l /usr/local/bin/hcloud; md5sum /usr/local/bin/hcloud || true; \
+         hcloud --help >/tmp/hh.out 2>/tmp/hh.err; echo "DIAG: exit=$?"; \
+         echo "DIAG: stdout bytes=$(wc -c </tmp/hh.out) stderr bytes=$(wc -c </tmp/hh.err)"; \
+         echo "DIAG: stdout head:"; head -c 300 /tmp/hh.out; echo; \
+         echo "DIAG: stderr head:"; head -c 300 /tmp/hh.err; echo; } >&2 \
     && hcloud_ver="$(hcloud --help 2>&1 | sed -nE 's/^KooCLI Version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n1)" \
     && test -n "${hcloud_ver}" || { echo "Could not read the KooCLI version banner from hcloud --help" >&2; exit 1; } \
     && printf '%s' "${hcloud_ver}" > /home/openchamber/.hcloud-version \
