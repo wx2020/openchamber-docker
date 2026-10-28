@@ -120,6 +120,9 @@ ARG OPENCODE_VERSION=unknown
 ARG OPENCODE_PACKAGE=auto
 ARG GH_VERSION=2.98.0
 ARG TEA_VERSION=0.14.2
+# Huawei Cloud KooCLI (command `hcloud`), all services incl. DNS. Its official
+# install script is interactive and unpinned, so the tarball is unpacked here.
+ARG HCLOUD_VERSION=7.3.12
 WORKDIR /home/openchamber
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -137,7 +140,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh /usr/local/bin/gh \
     && rm -rf /tmp/gh_${GH_VERSION}_linux_amd64 \
     && curl -fsSL https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64 -o /usr/local/bin/tea \
-    && chmod +x /usr/local/bin/tea
+    && chmod +x /usr/local/bin/tea \
+    && curl -fsSL https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz | tar -xz -C /tmp \
+    && mv /tmp/hcloud /usr/local/bin/hcloud \
+    && chmod +x /usr/local/bin/hcloud \
+    # hcloud has no --version flag; the banner on --help is the version source.
+    # --help writes no state, so this does not bake in the privacy agreement.
+    && hcloud --help 2>&1 | grep -q "KooCLI Version ${HCLOUD_VERSION}" \
+    && rm -f /tmp/README.md /tmp/OpenSourceSoftwareNotice.md
 
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
