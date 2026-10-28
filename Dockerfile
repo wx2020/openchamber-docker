@@ -124,6 +124,13 @@ ARG TEA_VERSION=0.14.2
 # Tracks whatever /cli/latest/ serves: the RUN below reads the shipped binary's
 # --help banner (hcloud has no --version) and records it in ~/.hcloud-version,
 # which CI logs and the release notes report. Nothing is pinned here on purpose.
+#
+# On a first run hcloud asks for the privacy statement and prints nothing else
+# without a TTY, so the version probe feeds it "y"; that state lands in
+# /root/.hcloud and is removed again so no agreement is baked into the image.
+# /cli/latest/ is resolved at build time, so this layer is rebuilt only when the
+# base image or this line changes; bump nothing to pick up a newer KooCLI, and
+# remember a cached layer can hold an older build.
 WORKDIR /home/openchamber
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -145,8 +152,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz | tar -xz -C /tmp \
     && mv /tmp/hcloud /usr/local/bin/hcloud \
     && chmod +x /usr/local/bin/hcloud \
-    && hcloud_ver="$(hcloud --help 2>&1 | sed -nE 's/^KooCLI Version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n1)" \
+    && hcloud_ver="$(printf 'y\n' | hcloud --help 2>&1 | sed -nE 's/^KooCLI Version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n1)" \
     && test -n "${hcloud_ver}" || { echo "Could not read the KooCLI version banner from hcloud --help" >&2; exit 1; } \
+    && rm -rf /root/.hcloud \
     && printf '%s' "${hcloud_ver}" > /home/openchamber/.hcloud-version \
     && echo "Bundled KooCLI: hcloud ${hcloud_ver}" \
     && rm -f /tmp/README.md /tmp/OpenSourceSoftwareNotice.md
