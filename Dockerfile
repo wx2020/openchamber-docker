@@ -120,6 +120,18 @@ ARG OPENCODE_VERSION=unknown
 ARG OPENCODE_PACKAGE=auto
 ARG GH_VERSION=2.98.0
 ARG TEA_VERSION=0.14.2
+# Huawei Cloud KooCLI (command `hcloud`), all services incl. DNS. Its official
+# install script is interactive, so the tarball is unpacked here instead.
+# Tracks whatever /cli/latest/ serves: the RUN below reads the shipped binary's
+# --help banner (hcloud has no --version) and records it in ~/.hcloud-version,
+# which CI logs and the release notes report. Nothing is pinned here on purpose.
+#
+# On a first run hcloud asks for the privacy statement and prints nothing else
+# without a TTY, so the version probe feeds it "y"; that state lands in
+# /root/.hcloud and is removed again so no agreement is baked into the image.
+# /cli/latest/ is resolved at build time, so this layer is rebuilt only when the
+# base image or this line changes; bump nothing to pick up a newer KooCLI, and
+# remember a cached layer can hold an older build.
 WORKDIR /home/openchamber
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -137,7 +149,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh /usr/local/bin/gh \
     && rm -rf /tmp/gh_${GH_VERSION}_linux_amd64 \
     && curl -fsSL https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64 -o /usr/local/bin/tea \
-    && chmod +x /usr/local/bin/tea
+    && chmod +x /usr/local/bin/tea \
+    && curl -fsSL https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz | tar -xz -C /tmp \
+    && mv /tmp/hcloud /usr/local/bin/hcloud \
+    && chmod +x /usr/local/bin/hcloud \
+    && hcloud_ver="$(printf 'y\n' | hcloud --help 2>&1 | sed -nE 's/^KooCLI Version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n1)" \
+    && test -n "${hcloud_ver}" || { echo "Could not read the KooCLI version banner from hcloud --help" >&2; exit 1; } \
+    && rm -rf /root/.hcloud \
+    && printf '%s' "${hcloud_ver}" > /home/openchamber/.hcloud-version \
+    && echo "Bundled KooCLI: hcloud ${hcloud_ver}" \
+    && rm -f /tmp/README.md /tmp/OpenSourceSoftwareNotice.md
 
 COPY --from=cloudflare/cloudflared@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
@@ -216,7 +237,6 @@ LABEL org.opencontainers.image.title="OpenChamber" \
       org.opencontainers.image.revision="${OPENCHAMBER_REF}" \
       org.opencontainers.image.licenses="MIT" \
       org.openchamber.opencode.version="${OPENCODE_VERSION}"
-
 COPY --from=source /src/scripts/docker-entrypoint.sh /home/openchamber/openchamber-entrypoint.sh
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
