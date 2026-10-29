@@ -265,7 +265,7 @@ jobs:
             OpenChamber upstream: https://github.com/openchamber/openchamber/releases/tag/${{ needs.build.outputs.upstream_ref }}
 
             ## What's Changed
-            * OpenChamber ${{ needs.build.outputs.upstream_ref }} packaged image, see the upstream release notes linked above by @openchamber
+            * OpenChamber ${{ needs.build.outputs.upstream_ref }} packaged image, see the upstream release notes linked above
 
             ## Feature
             * Bundled Huawei Cloud KooCLI (`hcloud`) ${{ needs.build.outputs.hcloud_version }} for DNS and other cloud service operations
