@@ -37,6 +37,7 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 
 ## Notes
 - `opencode-ai` 与 `@opencode/cli` 是同一上游项目的两个 npm 分发渠道：2.x 只发布在 `@opencode/cli`，`opencode-ai` 永远停在 1.x 线 —— 不要用 `npm show opencode-ai version` 为 OpenChamber 2.x 选版本。
+- **上游（2026-10-29 核查）没有官方 Docker 镜像发布**：GitHub 仓库带 `Dockerfile` + `docker-compose.yml`（build-from-source 自部署用），但 `.github/workflows` 里**无任何镜像发布工作流**（release.yml 只出桌面/npm），GHCR/Docker Hub `openchamber` org 均无镜像；官方安装路径 = 桌面包（deb/rpm/AppImage）+ npm/CLI 安装脚本；feature request #411（Docker image + GHCR 发布）2026-09-19 被 stale bot 关闭未实现。⇒ 本仓库（构建时 clone 上游的发行包装）的生态位不变；社区替代镜像存在（TheFrenchGhosty/docker-openchamber-quay、arranhs/closedchamber）。
 - 上游 OpenChamber 2026-09 起（PR #3837）只支持 OpenCode 2.x，1.x 代码路径已删除。
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。
 - 发布链路：`main` 上改功能/工作流 → 合入 `official-stable`（由 sync 或 Manual stable release 工作流执行）→ 从该分支触发 `release.yml`。
@@ -73,11 +74,14 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 
 ## 运维事实（本容器）
 
-- 推送本仓库走 HTTPS+PAT：`export GH_TOKEN="$(gh auth token)"`（gh 已登录 wx2020，scopes 含 `repo`/`workflow`）→ `git push "https://x-access-token:${GH_TOKEN}@github.com/wx2020/openchamber-docker.git" <src>:<dst>`；容器出网 22 端口被墙，SSH 到 github.com 不通。
+- 推送本仓库走 HTTPS+PAT：用 `https://wx2020:$(gh auth token)@github.com/wx2020/openchamber-docker.git`（gh 已登录 wx2020，scopes 含 `repo`/`workflow`）；容器出网 22 端口被墙，SSH 到 github.com 不通。**`https://x-access-token:<PAT>@...` 形式在 2026-10-28 被拒（`Invalid username or token`），别用**；输出务必 `sed` 脱敏。
 - **`main` 受保护**：只能走 PR，且要求 `test` 检查通过（`enforce_admins=true`、required approvals = 0，自己可合并）；`official-stable` 不受保护，sync / manual-release 可直接推。
 - 失败 run 的日志 zip 需认证：`curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/<o>/<r>/actions/runs/<id>/logs` → python `zipfile` 解（容器无 unzip）。
 - 本机 `actionlint`：`/tmp/opencode/alint/actionlint`（`-shellcheck=` 只做 workflow 校验，避免内联脚本风格问题误伤）。
 - **只有 `.github/workflows/*` 必须两分支逐字节一致**（`GITHUB_TOKEN` 推不动 workflow 文件的任何变动）；其它文件**允许**不同。典型例子：`main` 的 `VERSION` 停在 `1.20.0`、其 `Dockerfile` 是 1.x 基线（CI 就是拿 main 的 VERSION 去构建镜像做烟测），而 `official-stable` 的 `Dockerfile` 才带 2.x 所需的 `packages/sdk` 构建与运行时资产。**别把 official-stable 的 Dockerfile 搬到 main**：CI 会用 1.20.0 构建它，`packages/sdk` 在 v1.20.0 里不存在，build 阶段直接崩（2026-10-17 PR #17 首轮 CI 即因此变红，已回退）。
+- **反过来也成立：别把 main 的 Dockerfile/整分支搬进 official-stable（2026-10-28 确认）**。main 侧 deps 段逐个 `COPY packages/{ui,web,electron,vscode,mobile}/package.json`、builder 只有 `bun run build:web`、无 `packages/sdk` 构建与 dist COPY；official-stable 侧是 `becd048` 的 `COPY --from=source /src/packages ./packages` 整树 + `bun run --cwd packages/sdk build`。**历史做法一直是定向移植**（`fdae8c6`/`becd048`/`a8deadb`/`74bc05f` 都是独立 fix 提交；`Merge main into official-stable` 的合并提交对 Dockerfile 零改动；`chore: sync OpenChamber X.Y.Z` 只动 VERSION 一个文件）。移植套路：`git checkout -b <name> origin/official-stable` → `git cherry-pick -x <提交…>`，冲突只在双方都改过的行（hcloud 那轮仅 `818e730` 的 `printf 'y\n'` 行，取目标提交版本）；验收 = hcloud 段与 `6d1f457` 逐字节一致 + `bun run --cwd packages/sdk build` 仍在 + `actionlint` 通过 + CI 真跑一遍。
+- **PR #19 = hcloud 定向移植到 official-stable（2026-10-28 开、10-29 合）**：分支 `feat/bundle-hcloud-stable`（基点 `1dc931e`/VERSION 2.5.2，cherry-pick `404d3d9`+`78b4078`+`818e730`），CI run `40695491982` `test` pass 17m01s（构建日志与烟测均 `hcloud 7.3.12` + `bundled opencode runs: @opencode/cli@2.1.4`）。**它是 2.5.3 发版的硬前提**：main 已带 hcloud 的 workflow 变更，不先合 #19，sync 的「workflow 变更守卫」会按设计拒绝 push。
+- **v2.5.3 发布实录（2026-10-29，首个由「hcloud 版本镜像回读 + Android ARG 读取」版 release.yml 真跑出来的版本）**：合 #19 → 手动 `workflow_dispatch` sync-upstream（run `40800923677` 秒过，official-stable `b4ba8d7` 只动 VERSION）→ release run `40800939157` 三 job 全绿约 19 分钟。构建日志 `Bundled KooCLI: hcloud 7.3.12`、烟测回读同值 + `bundled opencode runs: @opencode/cli@2.2.0`（上游 2.5.3 的 Dockerfile 把 CLI pin 升到 2.2.0，我们的解析优先取上游 pin，自动跟上）。GHCR `2.5.3` 与 `latest` 同 digest（`299c4bcb…`）。**注意 GHCR tag 无 `v` 前缀**（`2.5.3` 而非 `v2.5.3`），匿名 API 验证镜像用 `curl "https://ghcr.io/token?scope=repository:wx2020/openchamber-docker:pull"` 取 token 再查 manifest；`gh api user/packages/...` 需要 `read:packages` scope（本机 token 没有会 403）。发布后手工 `gh release edit` 去掉了正文里 `by @openchamber` 的字面提及（假 Contributor 坑，见下）——**release.yml 模板里的这行还没改**，属于待修项。
 - **升级镜像前必须保留的持久化卷**（compose 映射）：`.config/openchamber`、`.config/opencode`、`.local/state|share/opencode`（`opencode.db` + `auth.json`）、`.ssh`、`.config/gh`、`.config/tea`、`.gitconfig`（文件 bind，宿主源须先 `touch`）、`workspaces`。卷源**不得嵌套**在另一卷源目录树内，否则同一份数据被双挂载（清空父目录会连带删掉子卷）。
 
 ## OpenCode 运行时与 AI 基础设施（2026-10-25 自全局记忆迁入）
