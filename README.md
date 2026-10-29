@@ -18,6 +18,7 @@
 | 服务端口 | 3000 |
 | 默认镜像标签 | latest |
 | 运行方式 | Docker Engine + Docker Compose v2 |
+| 捆绑的云 CLI | hcloud（华为云 KooCLI），跟随上游 latest，实际版本见 Release notes |
 
 当前没有发布 arm64 或其他架构的镜像。ARM 设备即使配置了 QEMU 模拟，也不属于本项目当前承诺的支持范围。
 
@@ -119,6 +120,7 @@ Compose 会把以下目录挂载到容器。不要把这些目录加入 Git：
 | data/opencode/state | /home/openchamber/.local/state/opencode | OpenCode 运行状态 |
 | data/opencode/config | /home/openchamber/.config/opencode | OpenCode 配置和 provider 设置 |
 | data/ssh | /home/openchamber/.ssh | SSH 密钥和 known_hosts |
+| data/hcloud（可选，默认不挂载） | /home/openchamber/.hcloud | hcloud 的 profile 和隐私声明确认状态 |
 | workspaces | /home/openchamber/workspaces | 供 OpenChamber 使用的项目目录 |
 
 镜像中的进程使用 UID/GID 1000:1000。Linux 主机如果遇到写入权限错误，可以先执行：
@@ -147,6 +149,46 @@ cp docker-compose.override.example.yml docker-compose.override.yml
 上游支持 quick、managed-remote 和 managed-local 三种 Cloudflare tunnel 模式。请根据上游文档配置 OPENCHAMBER_TUNNEL_PROVIDER、OPENCHAMBER_TUNNEL_MODE 等变量；managed-remote 模式还需要 hostname 和 token。
 
 不要把 tunnel token 放进公开仓库。建议仅保存在本机 .env 或部署平台的 secret 中。将服务暴露到公网时，必须保留 OPENCHAMBER_UI_PASSWORD，并额外配置 HTTPS、访问控制和备份策略。
+
+### 启用华为云 KooCLI（hcloud）
+
+镜像自带华为云官方命令行工具 **KooCLI（命令 `hcloud`）**，可直接操作云解析 DNS 等全部华为云 API。镜像跟随华为云 `/cli/latest/` 构建通道，每次构建打包当时的版本；实际版本会写进 Release notes，容器内也可直接查：
+
+~~~bash
+cat /home/openchamber/.hcloud-version
+~~~
+
+常用查询：
+~~~bash
+hcloud DNS ListPublicZones --cli-region=cn-north-4
+hcloud DNS ListRecordSetsByZone --cli-region=cn-north-4 --zone_id=<zone-id>
+~~~
+
+认证走 IAM 子用户的 AK/SK（`hcloud` 没有用户名密码登录）：
+
+~~~bash
+# 交互式写入 profile（落到容器内的 ~/.hcloud）
+hcloud configure init
+
+# 或完全免落盘，每次直传（适合脚本/CI）
+hcloud DNS ListPublicZones --cli-region=cn-north-4 \
+  --cli-access-key="$AK" --cli-secret-key="$SK"
+~~~
+
+注意事项：
+
+- 首次运行会有隐私声明确认（交互 y/N）；脚本里可写 `echo y | hcloud ...`。该确认状态记录在 `~/.hcloud/config.json`。
+- AK/SK 在 `~/.hcloud` 中是加密存储的，但 `~/.hcloud` **不在持久化卷里**，容器重建后 profile 会丢失。需要保留请用 override 追加卷：
+
+  ~~~yaml
+  services:
+    openchamber:
+      volumes:
+        - ./data/hcloud:/home/openchamber/.hcloud
+  ~~~
+
+- 不持久化时，推荐把 AK/SK 放 600 权限文件（例如已挂载的 `data/ssh`）并用免落盘方式调用，重建后无需恢复 profile。
+- 子用户需挂载 DNS 权限（`DNS ReadOnlyAccess` / `DNS FullAccess`），否则 API 返回 403。
 
 ### 启用 oh-my-opencode
 
@@ -183,10 +225,10 @@ OPENCHAMBER_REF 可以是上游 Git tag 或分支名。正式发布使用与 VER
 工作流位于 .github/workflows：
 
 1. Pull request、v* tag 或手动执行 CI 时运行 test。
-2. test 校验版本文件、Compose 配置，解析 OpenCode CLI 的 npm 包与版本（优先上游同版本 pin，校验 2.x 必须 >= 2.0.20），并构建 linux/amd64 镜像做基础烟测（含实测捆绑的 opencode 版本）。
+2. test 校验版本文件、Compose 配置，解析 OpenCode CLI 的 npm 包与版本（优先上游同版本 pin，校验 2.x 必须 >= 2.0.20），并构建 linux/amd64 镜像做基础烟测（含实测捆绑的 opencode 版本与 hcloud 版本）。
 3. v* tag 触发且 test 成功后进入可复用的 Release workflow；上游自动同步则通过 workflow_dispatch 启动同一发布流程。
 4. 手动执行 Manual stable release 时，从 main 同步或创建 official-stable，再启动 Release workflow。
-5. Release workflow 再次验证版本与 CLI 兼容性，构建并推送 GHCR 镜像，然后创建 GitHub Release（notes 标注捆绑的 CLI 版本）。
+5. Release workflow 再次验证版本与 CLI 兼容性，构建并推送 GHCR 镜像，然后创建 GitHub Release。notes 里捆绑的 OpenCode CLI 版本来自 npm 解析，hcloud 版本在构建完成后从镜像里回读，运行时（含 Android SDK）版本从 Dockerfile 的 ARG 读取，因此都不会与实际镜像脱节。
 6. 镜像只推送到 ghcr.io/wx2020/openchamber-docker，不会发布到 Docker Hub。
 
 上游稳定版本同步工作流每天 UTC 05:17 检查 OpenChamber 最新稳定 Release。发现比 `official-stable` 分支中的 VERSION 更新的三段式版本时，工作流会将最新 `main` 合入 `official-stable`，写入新的 VERSION，再以该分支启动 Release workflow 构建并推送 GHCR 镜像；不会直接写入受保护的 `main`。因此 Dockerfile、Compose 和工作流修复会随下一次上游版本同步进入发布分支。没有新版本时不会产生提交或构建。也可以在 Actions 中手动运行 Sync upstream release。

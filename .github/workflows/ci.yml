@@ -111,6 +111,8 @@ jobs:
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
 
+      # hcloud follows the upstream /cli/latest/ build, so the image reports the
+      # version it actually shipped; nothing to pin here.
       - name: Smoke test image
         shell: bash
         run: |
@@ -124,8 +126,11 @@ jobs:
                   command -v java >/dev/null && \
                   command -v cargo >/dev/null && \
                   command -v go >/dev/null && \
+                  command -v hcloud >/dev/null && \
+                  test -s /home/openchamber/.hcloud-version && \
                   opencode --version >/dev/null 2>&1 && \
-                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}"'
+                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}" && \
+                  echo "bundled KooCLI: hcloud $(cat /home/openchamber/.hcloud-version)"'
 
   release:
     name: release
