@@ -8,6 +8,10 @@ ARG OPENCODE_VERSION=unknown
 # 1.x uses the legacy opencode-ai package. "auto" derives it from the versions above.
 ARG OPENCODE_PACKAGE=auto
 ARG DOTNET_VERSION=8.0
+# Bun must stay >= 1.4: OpenChamber's terminal runtime only uses bun-pty there and
+# falls back to node-pty below it, whose native module dies under Bun (an
+# interactive shell is SIGHUPed within milliseconds). Upstream pins the same tag.
+ARG BUN_VERSION=1.4.4
 
 FROM alpine:3.22 AS source
 ARG OPENCHAMBER_REPOSITORY
@@ -16,7 +20,7 @@ WORKDIR /src
 RUN apk add --no-cache ca-certificates git \
     && git clone --depth 1 --branch "${OPENCHAMBER_REF}" "${OPENCHAMBER_REPOSITORY}" .
 
-FROM oven/bun:1.3.14 AS base
+FROM oven/bun:${BUN_VERSION} AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -112,7 +116,7 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS dotnet
 # ============================================
 # Final Runtime Image
 # ============================================
-FROM oven/bun:1.3.14 AS runtime
+FROM oven/bun:${BUN_VERSION} AS runtime
 ARG OPENCHAMBER_VERSION
 ARG OPENCHAMBER_REF
 ARG OPENCODE_VERSION=unknown

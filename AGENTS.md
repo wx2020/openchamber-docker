@@ -36,6 +36,7 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 - 工作流中版本必须是纯 semver（`X.Y.Z`），tag 必须是 `vX.Y.Z` 且与 VERSION 一致；镜像只推 GHCR，不推 Docker Hub。
 
 ## Notes
+- **Bun 版本下限是 1.4（`ARG BUN_VERSION`，当前 1.4.4，与上游 Dockerfile 一致）**：OpenChamber 的终端运行时 `packages/web/server/lib/terminal/{runtime,bun-pty-support}.js` 只在 `Bun >= 1.4`（且非 `1.4.0-` canary）时用 `bun-pty`，否则回落到 `node-pty`；而 `node-pty` 的 prebuild 在 Bun（1.3.14 与 1.4.4 都复现）下**能 spawn 但交互式 shell 3~7ms 内被 SIGHUP 打死**（`exitCode 0 / signal 1`），表现为内置终端打开即退出、`/api/terminal/create` 返回 running 后立刻 `exited`。判断口径：带 UI cookie `POST /api/terminal/create` 再 `GET /api/terminal/sessions` 看 status 是否秒变 `exited`；对照实验：同一 pty 脚本 `node` 下交互 shell 存活、`bun` 下秒退，`bun` 下 `loadTerminalPtyProvider()` 报 `backend: bun-pty` 才正常。本仓库 2.5.x–2.7.0 曾一直钉 1.3.14（上游自 2.5.0 起就是 1.4.3/1.4.4）。
 - `opencode-ai` 与 `@opencode/cli` 是同一上游项目的两个 npm 分发渠道：2.x 只发布在 `@opencode/cli`，`opencode-ai` 永远停在 1.x 线 —— 不要用 `npm show opencode-ai version` 为 OpenChamber 2.x 选版本。
 - 上游 OpenChamber 2026-09 起（PR #3837）只支持 OpenCode 2.x，1.x 代码路径已删除。
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。
