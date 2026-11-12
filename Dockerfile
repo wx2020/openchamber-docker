@@ -137,7 +137,14 @@ ARG TEA_VERSION=0.14.2
 # remember a cached layer can hold an older build.
 WORKDIR /home/openchamber
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# libicu (name follows the ICU ABI, e.g. libicu72 on bookworm / libicu76 on
+# trixie): the bundled .NET SDK aborts on startup ("Couldn't find a valid ICU
+# package") without an ICU build, and the base image ships none. Resolve it from
+# the base instead of pinning a name that breaks when the base moves releases.
+RUN apt-get update \
+    && icu_pkg="$(apt-cache pkgnames libicu | grep -E '^libicu[0-9]+$' | sort -V | tail -n1)" \
+    && if [ -z "${icu_pkg}" ]; then echo "Could not resolve libicu for the bundled .NET SDK" >&2; exit 1; fi \
+    && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
     curl \
@@ -147,6 +154,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     wget \
     yq \
+    "${icu_pkg}" \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz | tar -xz -C /tmp \
     && mv /tmp/gh_${GH_VERSION}_linux_amd64/bin/gh /usr/local/bin/gh \
@@ -188,6 +196,10 @@ ENV GOPATH=/home/openchamber/go
 ENV RUSTUP_HOME=/home/openchamber/.rustup
 ENV ANDROID_HOME=/opt/android-sdk
 ENV NODE_ENV=production
+# Upstream sets this for the built-in terminal: the base image ships the POSIX
+# locale, which makes bash readline treat every byte of a multibyte (e.g. CJK)
+# character separately.
+ENV LANG=C.UTF-8
 ENV OPENCHAMBER_IMAGE_VERSION=${OPENCHAMBER_VERSION}
 ENV OPENCODE_IMAGE_VERSION=${OPENCODE_VERSION}
 

@@ -118,17 +118,20 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --platform linux/amd64 --entrypoint sh \
+            -v "${PWD}/scripts/smoke-terminal.mjs:/tmp/smoke-terminal.mjs:ro" \
             "openchamber-ci:${{ steps.version.outputs.version }}" \
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
                   test -x /usr/local/bin/cloudflared && \
-                  command -v dotnet >/dev/null && \
-                  command -v java >/dev/null && \
-                  command -v cargo >/dev/null && \
-                  command -v go >/dev/null && \
                   command -v hcloud >/dev/null && \
                   test -s /home/openchamber/.hcloud-version && \
                   opencode --version >/dev/null 2>&1 && \
+                  dotnet --version >/dev/null && \
+                  java -version >/dev/null 2>&1 && \
+                  go version >/dev/null && \
+                  cargo --version >/dev/null && \
+                  test "$(locale charmap)" = UTF-8 && \
+                  bun /tmp/smoke-terminal.mjs && \
                   echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}" && \
                   echo "bundled KooCLI: hcloud $(cat /home/openchamber/.hcloud-version)"'
 
