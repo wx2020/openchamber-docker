@@ -7,3 +7,5 @@ tmp/
 !.gitkeep
 !data/.gitkeep
 !workspaces/.gitkeep
+__pycache__/
+*.pyc

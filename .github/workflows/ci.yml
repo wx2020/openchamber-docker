@@ -58,38 +58,17 @@ jobs:
           OPENCHAMBER_UI_PASSWORD: ci-only-not-a-secret
         run: docker compose -f docker-compose.yml config --quiet
 
-      - name: Resolve OpenCode CLI package and version
-        id: opencode
+      # Resolves every bundled toolchain to the newest release inside its family
+      # (Node 24.x, Python 3.13.x, Gradle 8.x, latest gh/tea, current rust
+      # stable, the Bun tag the upstream Dockerfile pins) plus the OpenCode CLI
+      # from the npm latest tag. The Dockerfile defaults are the local fallback.
+      - name: Resolve toolchain versions
+        id: tools
         shell: bash
         env:
-          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
           UPSTREAM_REF: v${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          oc_major="${OPENCHAMBER_VERSION%%.*}"
-          if [ "${oc_major}" -ge 2 ]; then pkg="@opencode/cli"; else pkg="opencode-ai"; fi
-          # Trust the upstream Dockerfile pin when present so the bundled server
-          # matches the @opencode/client the image is built from.
-          pin="$(curl -fsSL "https://raw.githubusercontent.com/openchamber/openchamber/${UPSTREAM_REF}/Dockerfile" \
-            | grep -Eo '@opencode/cli@[0-9][0-9A-Za-z.+-]*' | head -n1 | cut -d@ -f3 || true)"
-          if [ "${pkg}" = "@opencode/cli" ] && [ -n "${pin}" ]; then
-            ver="${pin}"
-          else
-            ver="$(npm show "${pkg}" version)"
-          fi
-          npm show "${pkg}@${ver}" version >/dev/null
-          if [ "${oc_major}" -ge 2 ]; then
-            # Upstream floor: MINIMUM_OPENCODE_VERSION in openchamber/openchamber
-            # packages/web/server/lib/opencode/compatibility.js; major must stay 2.
-            if [ "${ver%%.*}" != "2" ] || \
-               [ "$(printf '2.0.20\n%s\n' "${ver}" | sort -V | head -n1)" != "2.0.20" ]; then
-              echo "OpenChamber ${OPENCHAMBER_VERSION} requires OpenCode 2.x >= 2.0.20, resolved ${pkg}@${ver}" >&2
-              exit 1
-            fi
-          fi
-          echo "package=${pkg}" >> "$GITHUB_OUTPUT"
-          echo "opencode_version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "Resolved OpenCode CLI: ${pkg}@${ver} for OpenChamber ${OPENCHAMBER_VERSION}"
+          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
+        run: python3 scripts/resolve-toolchain.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -106,8 +85,19 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=v${{ steps.version.outputs.version }}
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
-            OPENCODE_PACKAGE=${{ steps.opencode.outputs.package }}
-            OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
+            OPENCODE_PACKAGE=${{ steps.tools.outputs.opencode_package }}
+            OPENCODE_VERSION=${{ steps.tools.outputs.opencode_version }}
+            BUN_VERSION=${{ steps.tools.outputs.bun_version }}
+            NODE_VERSION=${{ steps.tools.outputs.node_version }}
+            PYTHON_VERSION=${{ steps.tools.outputs.python_version }}
+            GO_VERSION=${{ steps.tools.outputs.go_version }}
+            RUST_VERSION=${{ steps.tools.outputs.rust_version }}
+            GRADLE_VERSION=${{ steps.tools.outputs.gradle_version }}
+            GH_VERSION=${{ steps.tools.outputs.gh_version }}
+            TEA_VERSION=${{ steps.tools.outputs.tea_version }}
+            ANDROID_CMDLINE_VERSION=${{ steps.tools.outputs.android_cmdline_version }}
+            ANDROID_BUILD_TOOLS_VERSION=${{ steps.tools.outputs.android_build_tools_version }}
+            ANDROID_PLATFORM_VERSION=${{ steps.tools.outputs.android_platform_version }}
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
 
@@ -128,9 +118,31 @@ jobs:
                   command -v go >/dev/null && \
                   command -v hcloud >/dev/null && \
                   test -s /home/openchamber/.hcloud-version && \
+                  test -s /home/openchamber/.toolchain-versions && \
                   opencode --version >/dev/null 2>&1 && \
-                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}" && \
+                  echo "bundled opencode runs: ${{ steps.tools.outputs.opencode_package }}@${{ steps.tools.outputs.opencode_version }}" && \
+                  echo "bundled toolchain:" && cat /home/openchamber/.toolchain-versions && \
                   echo "bundled KooCLI: hcloud $(cat /home/openchamber/.hcloud-version)"'
+
+      # The image reports what it actually installed; compare it with the
+      # resolved values so a silently ignored build arg cannot slip through.
+      - name: Verify bundled versions match the resolution
+        shell: bash
+        env:
+          EXPECTED_NODE: ${{ steps.tools.outputs.node_version }}
+          EXPECTED_GO: ${{ steps.tools.outputs.go_version }}
+          EXPECTED_GH: ${{ steps.tools.outputs.gh_version }}
+        run: |
+          set -euo pipefail
+          image="openchamber-ci:${{ steps.version.outputs.version }}"
+          node_actual="$(docker run --rm --platform linux/amd64 --entrypoint node "$image" -v | sed 's/^v//')"
+          go_actual="$(docker run --rm --platform linux/amd64 --entrypoint go "$image" version | awk '{print $3}' | sed 's/^go//')"
+          gh_actual="$(docker run --rm --platform linux/amd64 --entrypoint gh "$image" --version | awk '{print $3}')"
+          printf 'node expected=%s actual=%s\ngo expected=%s actual=%s\ngh expected=%s actual=%s\n' \
+            "${EXPECTED_NODE}" "${node_actual}" "${EXPECTED_GO}" "${go_actual}" "${EXPECTED_GH}" "${gh_actual}"
+          [ "${node_actual}" = "${EXPECTED_NODE}" ] || { echo "node version mismatch" >&2; exit 1; }
+          [ "${go_actual}" = "${EXPECTED_GO}" ] || { echo "go version mismatch" >&2; exit 1; }
+          [ "${gh_actual}" = "${EXPECTED_GH}" ] || { echo "gh version mismatch" >&2; exit 1; }
 
   release:
     name: release
