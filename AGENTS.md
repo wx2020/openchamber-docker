@@ -36,6 +36,12 @@ data/ workspaces/          # 运行时宿主机挂载点（不入 Git）
 - 工作流中版本必须是纯 semver（`X.Y.Z`），tag 必须是 `vX.Y.Z` 且与 VERSION 一致；镜像只推 GHCR，不推 Docker Hub。
 
 ## Notes
+- `scripts/resolve-toolchain.py` 是工具链版本的唯一解析入口（2026-11-14 引入）：Dockerfile 里每个 `ARG` 是**族基线**（Node 24 / Python 3.13 / Go 1.27 / Gradle 8 / rust stable / 最新 gh、tea / 上游 Dockerfile 的 Bun tag），CI 与 Release 各跑一次脚本，把族内最新 patch 作为 build-arg 传入。**不要在 Dockerfile 的 RUN 里内联解析最新版本**——指令文本不变时 Docker 层缓存会永远重放旧下载，这正是以前版本越用越旧的原因之一。Android platform/build-tools 不参与自动解析（跨族，人工维护，当前统一 Android 15 / API 35）。
+- 解析默认 **fail-open**（端点不可达时保留 Dockerfile 默认值并 `::warning::`），唯一例外是 OpenCode CLI：npm 查询失败直接 fail，避免静默装出与 `@opencode/client` 不匹配的 server。CLI 取 npm `latest`（2.x 用 `@opencode/cli`，守卫 major=2 且 >=2.0.20），只有 npm 不可达才回退上游 pin。
+- 镜像内 `/home/openchamber/.toolchain-versions` 是实际安装版本的审计源，CI/Release 烟测会回读并与解析值逐项比对（node/go/gh），Release notes 也引用它。
+- 改 Dockerfile 的族基线（如 Gradle 9、Go 1.28）属于跨族升级：合入前要跑一次完整 CI 构建验证。
+- 本仓库工作流文件变更仍需用带 `workflow` scope 的 token 推 `official-stable`。
+
 - `opencode-ai` 与 `@opencode/cli` 是同一上游项目的两个 npm 分发渠道：2.x 只发布在 `@opencode/cli`，`opencode-ai` 永远停在 1.x 线 —— 不要用 `npm show opencode-ai version` 为 OpenChamber 2.x 选版本。
 - 上游 OpenChamber 2026-09 起（PR #3837）只支持 OpenCode 2.x，1.x 代码路径已删除。
 - 镜像内进程 UID/GID 1000:1000；Linux 宿主机写权限问题用 `sudo chown -R 1000:1000 data workspaces`。

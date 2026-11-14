@@ -8,6 +8,10 @@ ARG OPENCODE_VERSION=unknown
 # 1.x uses the legacy opencode-ai package. "auto" derives it from the versions above.
 ARG OPENCODE_PACKAGE=auto
 ARG DOTNET_VERSION=8.0
+# Bun base image tag. The upstream Dockerfile pins the exact Bun that the app
+# was built and tested against; scripts/resolve-toolchain.py reads that pin and
+# passes it as a build arg, so this default only covers local builds.
+ARG BUN_VERSION=1.4.4
 
 FROM alpine:3.22 AS source
 ARG OPENCHAMBER_REPOSITORY
@@ -16,7 +20,7 @@ WORKDIR /src
 RUN apk add --no-cache ca-certificates git \
     && git clone --depth 1 --branch "${OPENCHAMBER_REF}" "${OPENCHAMBER_REPOSITORY}" .
 
-FROM oven/bun:1.3.14 AS base
+FROM oven/bun:${BUN_VERSION} AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -39,18 +43,24 @@ RUN bun run build:web
 # ============================================
 # Runtimes Stage - 下载所有 SDK
 # ============================================
+# Each ARG below is a *family baseline*, not a hard pin: scripts/resolve-toolchain.py
+# resolves the newest release inside that family at build time (Node 24.x,
+# Python 3.13.x, Go 1.27.x, Gradle 8.x, current rust stable, latest gh/tea) and
+# CI passes the result as build args. Raise a baseline here to move families.
+# Android SDK is the exception: platform/build-tools changes are cross-family and
+# stay a reviewed edit, currently Android 15 / API 35 for both.
 FROM debian:bookworm-slim AS runtimes
-ARG NODE_VERSION=24.19.0
-ARG PYTHON_VERSION=3.13.15
-ARG GO_VERSION=1.25.14
-ARG RUST_VERSION=1.98.0
+ARG NODE_VERSION=24.22.3
+ARG PYTHON_VERSION=3.13.18
+ARG GO_VERSION=1.27.4
+ARG RUST_VERSION=1.100.0
 ARG JAVA_VERSION=17
-ARG GH_VERSION=2.98.0
-ARG TEA_VERSION=0.14.2
+ARG GH_VERSION=2.104.0
+ARG TEA_VERSION=0.16.0
 ARG ANDROID_CMDLINE_VERSION=15859902
-ARG ANDROID_BUILD_TOOLS_VERSION=36.0.0
+ARG ANDROID_BUILD_TOOLS_VERSION=35.0.0
 ARG ANDROID_PLATFORM_VERSION=35
-ARG GRADLE_VERSION=8.11.1
+ARG GRADLE_VERSION=8.14.7
 
 WORKDIR /opt
 
@@ -113,13 +123,22 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS dotnet
 # ============================================
 # Final Runtime Image
 # ============================================
-FROM oven/bun:1.3.14 AS runtime
+FROM oven/bun:${BUN_VERSION} AS runtime
 ARG OPENCHAMBER_VERSION
 ARG OPENCHAMBER_REF
 ARG OPENCODE_VERSION=unknown
 ARG OPENCODE_PACKAGE=auto
-ARG GH_VERSION=2.98.0
-ARG TEA_VERSION=0.14.2
+ARG BUN_VERSION=1.4.4
+ARG NODE_VERSION=24.22.3
+ARG PYTHON_VERSION=3.13.18
+ARG GO_VERSION=1.27.4
+ARG RUST_VERSION=1.100.0
+ARG GRADLE_VERSION=8.14.7
+ARG GH_VERSION=2.104.0
+ARG TEA_VERSION=0.16.0
+ARG ANDROID_CMDLINE_VERSION=15859902
+ARG ANDROID_BUILD_TOOLS_VERSION=35.0.0
+ARG ANDROID_PLATFORM_VERSION=35
 # Huawei Cloud KooCLI (command `hcloud`), all services incl. DNS. Its official
 # install script is interactive, so the tarball is unpacked here instead.
 # Tracks whatever /cli/latest/ serves: the RUN below reads the shipped binary's
@@ -228,6 +247,14 @@ RUN mkdir -p /home/openchamber/.npm-global \
          fi; \
          echo "OpenCode CLI from ${pkg}@${OPENCODE_VERSION} runs as $(id -un)."; \
        }
+
+# Audit trail: CI reads this back in the smoke test and the release body quotes
+# it, so the notes describe what the image actually contains.
+RUN printf 'bun=%s\nnode=%s\npython=%s\ngo=%s\nrust=%s\ngradle=%s\ngh=%s\ntea=%s\njava=17\ndotnet=8.0\nandroid_platform=%s\nandroid_build_tools=%s\nandroid_cmdline=%s\nopencode=%s@%s\n' \
+      "${BUN_VERSION}" "${NODE_VERSION}" "${PYTHON_VERSION}" "${GO_VERSION}" "${RUST_VERSION}" "${GRADLE_VERSION}" \
+      "${GH_VERSION}" "${TEA_VERSION}" "${ANDROID_PLATFORM_VERSION}" "${ANDROID_BUILD_TOOLS_VERSION}" \
+      "${ANDROID_CMDLINE_VERSION}" "${OPENCODE_PACKAGE}" "${OPENCODE_VERSION}" \
+      > /home/openchamber/.toolchain-versions
 
 LABEL org.opencontainers.image.title="OpenChamber" \
       org.opencontainers.image.description="OpenChamber web interface for OpenCode" \
