@@ -36,9 +36,17 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       upstream_ref: ${{ steps.version.outputs.upstream_ref }}
-      opencode_version: ${{ steps.opencode.outputs.opencode_version }}
-      opencode_package: ${{ steps.opencode.outputs.package }}
+      opencode_version: ${{ steps.tools.outputs.opencode_version }}
+      opencode_package: ${{ steps.tools.outputs.opencode_package }}
       hcloud_version: ${{ steps.image.outputs.hcloud_version }}
+      bun_version: ${{ steps.tools.outputs.bun_version }}
+      node_version: ${{ steps.tools.outputs.node_version }}
+      python_version: ${{ steps.tools.outputs.python_version }}
+      go_version: ${{ steps.tools.outputs.go_version }}
+      rust_version: ${{ steps.tools.outputs.rust_version }}
+      gradle_version: ${{ steps.tools.outputs.gradle_version }}
+      gh_version: ${{ steps.tools.outputs.gh_version }}
+      tea_version: ${{ steps.tools.outputs.tea_version }}
       android_cmdline_version: ${{ steps.tools.outputs.android_cmdline_version }}
       android_build_tools_version: ${{ steps.tools.outputs.android_build_tools_version }}
       android_platform_version: ${{ steps.tools.outputs.android_platform_version }}
@@ -96,64 +104,18 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$upstream_ref" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve OpenCode CLI package and version
-        id: opencode
-        shell: bash
-        env:
-          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
-          UPSTREAM_REF: ${{ steps.version.outputs.upstream_ref }}
-        run: |
-          set -euo pipefail
-          oc_major="${OPENCHAMBER_VERSION%%.*}"
-          if [ "${oc_major}" -ge 2 ]; then pkg="@opencode/cli"; else pkg="opencode-ai"; fi
-          # Trust the upstream Dockerfile pin when present so the bundled server
-          # matches the @opencode/client the image is built from.
-          pin="$(curl -fsSL "https://raw.githubusercontent.com/openchamber/openchamber/${UPSTREAM_REF}/Dockerfile" \
-            | grep -Eo '@opencode/cli@[0-9][0-9A-Za-z.+-]*' | head -n1 | cut -d@ -f3 || true)"
-          if [ "${pkg}" = "@opencode/cli" ] && [ -n "${pin}" ]; then
-            ver="${pin}"
-          else
-            ver="$(npm show "${pkg}" version)"
-          fi
-          npm show "${pkg}@${ver}" version >/dev/null
-          if [ "${oc_major}" -ge 2 ]; then
-            # Upstream floor: MINIMUM_OPENCODE_VERSION in openchamber/openchamber
-            # packages/web/server/lib/opencode/compatibility.js; major must stay 2.
-            if [ "${ver%%.*}" != "2" ] || \
-               [ "$(printf '2.0.20\n%s\n' "${ver}" | sort -V | head -n1)" != "2.0.20" ]; then
-              echo "OpenChamber ${OPENCHAMBER_VERSION} requires OpenCode 2.x >= 2.0.20, resolved ${pkg}@${ver}" >&2
-              exit 1
-            fi
-          fi
-          echo "package=${pkg}" >> "$GITHUB_OUTPUT"
-          echo "opencode_version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "Resolved OpenCode CLI: ${pkg}@${ver} for OpenChamber ${OPENCHAMBER_VERSION}"
-
-      # Android SDK versions are pinned in the Dockerfile; hcloud follows
-      # /cli/latest/, so its version is read back out of the built image instead.
-      - name: Resolve bundled tool versions
+      # One resolver for every bundled toolchain: newest release inside each
+      # family (Node 24.x, Python 3.13.x, Go 1.27.x, Gradle 8.x, rust stable,
+      # latest gh/tea, the upstream Dockerfile's Bun tag) plus the npm latest
+      # OpenCode CLI. Unreachable endpoints fall back to the Dockerfile defaults
+      # and warn; a failed OpenCode lookup fails the build instead.
+      - name: Resolve toolchain versions
         id: tools
         shell: bash
-        run: |
-          set -euo pipefail
-          read_arg() {
-            local value
-            value="$(sed -nE "s/^ARG $1=([0-9][0-9A-Za-z.]*)$/\1/p" Dockerfile | head -n1)"
-            if [ -z "${value}" ]; then
-              echo "Dockerfile has no ARG $1=<version> default" >&2
-              exit 1
-            fi
-            printf '%s' "${value}"
-          }
-          android_cmdline="$(read_arg ANDROID_CMDLINE_VERSION)"
-          android_build_tools="$(read_arg ANDROID_BUILD_TOOLS_VERSION)"
-          android_platform="$(read_arg ANDROID_PLATFORM_VERSION)"
-          {
-            echo "android_cmdline_version=${android_cmdline}"
-            echo "android_build_tools_version=${android_build_tools}"
-            echo "android_platform_version=${android_platform}"
-          } >> "$GITHUB_OUTPUT"
-          echo "Android cmdline ${android_cmdline}, build-tools ${android_build_tools}, platform ${android_platform}"
+        env:
+          UPSTREAM_REF: ${{ steps.version.outputs.upstream_ref }}
+          OPENCHAMBER_VERSION: ${{ steps.version.outputs.version }}
+        run: python3 scripts/resolve-toolchain.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -170,34 +132,59 @@ jobs:
           build-args: |
             OPENCHAMBER_REF=${{ steps.version.outputs.upstream_ref }}
             OPENCHAMBER_VERSION=${{ steps.version.outputs.version }}
-            OPENCODE_PACKAGE=${{ steps.opencode.outputs.package }}
-            OPENCODE_VERSION=${{ steps.opencode.outputs.opencode_version }}
+            OPENCODE_PACKAGE=${{ steps.tools.outputs.opencode_package }}
+            OPENCODE_VERSION=${{ steps.tools.outputs.opencode_version }}
+            BUN_VERSION=${{ steps.tools.outputs.bun_version }}
+            NODE_VERSION=${{ steps.tools.outputs.node_version }}
+            PYTHON_VERSION=${{ steps.tools.outputs.python_version }}
+            GO_VERSION=${{ steps.tools.outputs.go_version }}
+            RUST_VERSION=${{ steps.tools.outputs.rust_version }}
+            GRADLE_VERSION=${{ steps.tools.outputs.gradle_version }}
+            GH_VERSION=${{ steps.tools.outputs.gh_version }}
+            TEA_VERSION=${{ steps.tools.outputs.tea_version }}
+            ANDROID_CMDLINE_VERSION=${{ steps.tools.outputs.android_cmdline_version }}
+            ANDROID_BUILD_TOOLS_VERSION=${{ steps.tools.outputs.android_build_tools_version }}
+            ANDROID_PLATFORM_VERSION=${{ steps.tools.outputs.android_platform_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
 
       - name: Smoke test release image
         id: image
         shell: bash
+        env:
+          EXPECTED_NODE: ${{ steps.tools.outputs.node_version }}
+          EXPECTED_GO: ${{ steps.tools.outputs.go_version }}
+          EXPECTED_GH: ${{ steps.tools.outputs.gh_version }}
         run: |
           set -euo pipefail
-          out="$(docker run --rm --platform linux/amd64 --entrypoint sh \
-            "openchamber-release:${{ steps.version.outputs.version }}" \
+          image="openchamber-release:${{ steps.version.outputs.version }}"
+          out="$(docker run --rm --platform linux/amd64 --entrypoint sh "${image}" \
             -ceu 'test -f /home/openchamber/openchamber-entrypoint.sh && \
                   test -d /home/openchamber/packages/web/dist && \
                   test -x /usr/local/bin/cloudflared && \
                   command -v hcloud >/dev/null && \
                   test -s /home/openchamber/.hcloud-version && \
+                  test -s /home/openchamber/.toolchain-versions && \
                   opencode --version >/dev/null 2>&1 && \
-                  echo "bundled opencode runs: ${{ steps.opencode.outputs.package }}@${{ steps.opencode.outputs.opencode_version }}" && \
-                  cat /home/openchamber/.hcloud-version')"
+                  echo "bundled opencode runs: ${{ steps.tools.outputs.opencode_package }}@${{ steps.tools.outputs.opencode_version }}" && \
+                  echo "bundled toolchain:" && cat /home/openchamber/.toolchain-versions && \
+                  echo "bundled KooCLI: hcloud $(cat /home/openchamber/.hcloud-version)"')"
           echo "${out}"
-          hcloud="$(printf '%s\n' "${out}" | sed -nE 's/^([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | head -n1)"
+          hcloud="$(printf '%s\n' "${out}" | tail -n1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
           if [ -z "${hcloud}" ]; then
             echo "Could not read the bundled KooCLI version from the image" >&2
             exit 1
           fi
           echo "hcloud_version=${hcloud}" >> "$GITHUB_OUTPUT"
           echo "Bundled KooCLI: hcloud ${hcloud}"
+          node_actual="$(docker run --rm --platform linux/amd64 --entrypoint node "${image}" -v | sed 's/^v//')"
+          go_actual="$(docker run --rm --platform linux/amd64 --entrypoint go "${image}" version | awk '{print $3}' | sed 's/^go//')"
+          gh_actual="$(docker run --rm --platform linux/amd64 --entrypoint gh "${image}" --version | awk '{print $3}')"
+          printf 'node expected=%s actual=%s\ngo expected=%s actual=%s\ngh expected=%s actual=%s\n' \
+            "${EXPECTED_NODE}" "${node_actual}" "${EXPECTED_GO}" "${go_actual}" "${EXPECTED_GH}" "${gh_actual}"
+          [ "${node_actual}" = "${EXPECTED_NODE}" ] || { echo "node version mismatch" >&2; exit 1; }
+          [ "${go_actual}" = "${EXPECTED_GO}" ] || { echo "go version mismatch" >&2; exit 1; }
+          [ "${gh_actual}" = "${EXPECTED_GH}" ] || { echo "gh version mismatch" >&2; exit 1; }
 
   ghcr:
     name: Publish GHCR
@@ -245,6 +232,17 @@ jobs:
             OPENCHAMBER_VERSION=${{ needs.build.outputs.version }}
             OPENCODE_PACKAGE=${{ needs.build.outputs.opencode_package }}
             OPENCODE_VERSION=${{ needs.build.outputs.opencode_version }}
+            BUN_VERSION=${{ needs.build.outputs.bun_version }}
+            NODE_VERSION=${{ needs.build.outputs.node_version }}
+            PYTHON_VERSION=${{ needs.build.outputs.python_version }}
+            GO_VERSION=${{ needs.build.outputs.go_version }}
+            RUST_VERSION=${{ needs.build.outputs.rust_version }}
+            GRADLE_VERSION=${{ needs.build.outputs.gradle_version }}
+            GH_VERSION=${{ needs.build.outputs.gh_version }}
+            TEA_VERSION=${{ needs.build.outputs.tea_version }}
+            ANDROID_CMDLINE_VERSION=${{ needs.build.outputs.android_cmdline_version }}
+            ANDROID_BUILD_TOOLS_VERSION=${{ needs.build.outputs.android_build_tools_version }}
+            ANDROID_PLATFORM_VERSION=${{ needs.build.outputs.android_platform_version }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
 
@@ -265,26 +263,32 @@ jobs:
             OpenChamber upstream: https://github.com/openchamber/openchamber/releases/tag/${{ needs.build.outputs.upstream_ref }}
 
             ## What's Changed
-            * OpenChamber ${{ needs.build.outputs.upstream_ref }} packaged image, see the upstream release notes linked above by @openchamber
+            * OpenChamber ${{ needs.build.outputs.upstream_ref }} packaged image; see the upstream release notes linked above (maintained by the openchamber project)
 
             ## Feature
             * Bundled Huawei Cloud KooCLI (`hcloud`) ${{ needs.build.outputs.hcloud_version }} for DNS and other cloud service operations
+            * Bundled toolchains now track the newest release inside their family at build time (Node ${{ needs.build.outputs.node_version }}, Go ${{ needs.build.outputs.go_version }}, Gradle ${{ needs.build.outputs.gradle_version }}, gh ${{ needs.build.outputs.gh_version }}, ...), so the image no longer ages between upstream releases
+            * OpenCode CLI now tracks the npm `latest` tag (still guarded to 2.x >= 2.0.20) instead of the upstream Dockerfile pin
 
             ## Bugfix
             * Dropped `generate_release_notes`, which duplicated this body
-            * Release notes now read bundled tool versions from the Dockerfile ARGs instead of hardcoded strings
+            * Release notes read the versions the image actually shipped from `/home/openchamber/.toolchain-versions` instead of hardcoded strings
+            * Bun base image moved to ${{ needs.build.outputs.bun_version }}, matching the upstream release
 
             **Bundled OpenCode CLI:** ${{ needs.build.outputs.opencode_package }}@${{ needs.build.outputs.opencode_version }}
 
             **Runtime environments:**
-            - Node.js: v24.19.0
-            - Python: 3.13.15
-            - Go: 1.25.14
-            - Rust: 1.98.0
+            - Bun: ${{ needs.build.outputs.bun_version }}
+            - Node.js: v${{ needs.build.outputs.node_version }}
+            - Python: ${{ needs.build.outputs.python_version }}
+            - Go: ${{ needs.build.outputs.go_version }}
+            - Rust: ${{ needs.build.outputs.rust_version }}
             - Java: JDK 17 (Temurin)
             - .NET: SDK 8.0
-            - Android SDK: cmdline-tools ${{ needs.build.outputs.android_cmdline_version }}, build-tools ${{ needs.build.outputs.android_build_tools_version }}, platform ${{ needs.build.outputs.android_platform_version }}
-            - Gradle: 8.11.1
+            - Android SDK: cmdline-tools ${{ needs.build.outputs.android_cmdline_version }}, build-tools ${{ needs.build.outputs.android_build_tools_version }}, platform ${{ needs.build.outputs.android_platform_version }} (Android 15 / API 35)
+            - Gradle: ${{ needs.build.outputs.gradle_version }}
+            - gh: ${{ needs.build.outputs.gh_version }}
+            - tea: ${{ needs.build.outputs.tea_version }}
             - Huawei Cloud KooCLI (hcloud): ${{ needs.build.outputs.hcloud_version }}
             <small>hcloud follows Huawei Cloud's `latest` build channel, so this is the version the image actually shipped with; it can change between releases without an OpenChamber bump.</small>
 
